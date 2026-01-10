@@ -1,7 +1,7 @@
 # ESP32 Serial-to-WiFi Bridge Interface Specification
 
 ## Overview
-The ESP32 bridge provides a transparent serial-to-WiFi relay for AgOpenGPS PGN messages between the Teensy 4.1 (New Dawn) and the AgOpenGPS network. The ESP32 connects to the Teensy via Serial2 at 460800 baud.
+The ESP32 bridge provides a transparent serial-to-WiFi relay for AgOpenGPS PGN messages between the Teensy 4.1 (v26) and the AgOpenGPS network. The ESP32 connects to the Teensy via Serial2 at 460800 baud.
 
 ## Hardware Connection
 - **Serial Interface**: UART Serial2 on Teensy (TX2/RX2)

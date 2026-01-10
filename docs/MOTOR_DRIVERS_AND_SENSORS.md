@@ -1,12 +1,12 @@
 # Motor Drivers and Sensors
 
-This document describes the motor driver implementations and sensor interfaces in AiO New Dawn.
+This document describes the motor driver implementations and sensor interfaces in AiO v26.
 
 ## Motor Driver System
 
 ### Overview
 
-AiO New Dawn supports multiple motor driver types through a unified interface. The system automatically detects and configures the appropriate driver based on hardware detection or EEPROM settings.
+AiO v26 supports multiple motor driver types through a unified interface. The system automatically detects and configures the appropriate driver based on hardware detection or EEPROM settings.
 
 ### Motor Driver Interface
 

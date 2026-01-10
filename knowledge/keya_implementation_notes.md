@@ -8,7 +8,7 @@ The old implementation had a kludge where PWM values were converted to CAN comma
 SteerKeya(pwmDrive);  // Mixing PWM concept with CAN protocol!
 ```
 
-## The New Dawn Solution
+## The v26 Solution
 
 ### 1. **Proper Abstraction**
 The autosteer code now uses a clean interface:

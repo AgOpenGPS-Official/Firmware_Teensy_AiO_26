@@ -1,4 +1,4 @@
-# AiO New Dawn Quick Reference
+# AiO v26 Quick Reference
 
 ## System Information
 - **Platform**: Teensy 4.1 / Little Dawn

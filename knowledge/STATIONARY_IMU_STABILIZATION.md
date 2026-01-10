@@ -366,7 +366,7 @@ private:
 };
 ```
 
-## Integration with AiO New Dawn
+## Integration with AiO v26
 
 ### In GNSSProcessor or IMUProcessor
 
@@ -652,5 +652,5 @@ The stationary stabilization system solves the IMU/GPS wandering problem using:
 ---
 
 *Document created: 2025-11-03*
-*For: AiO New Dawn Agricultural Control System*
+*For: AiO v26 Agricultural Control System*
 *Status: Proposed Solution - Ready for Implementation*

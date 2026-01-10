@@ -7,7 +7,7 @@
 #ifndef VERSION_H
 #define VERSION_H
 
-// AiO New Dawn firmware version
+// AiO v26 firmware version
 #define FIRMWARE_VERSION "26.1" // 
 
 // Teensy board type for OTA identification

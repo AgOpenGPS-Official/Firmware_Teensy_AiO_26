@@ -16,7 +16,7 @@
 const char CAN_INFO_JSON[] PROGMEM = R"JSON({
   "version": "2.0",
   "metadata": {
-    "description": "CAN bus configuration for AiO New Dawn - Unified format for UI and implementation",
+    "description": "CAN bus configuration for AiO v26 - Unified format for UI and implementation",
     "lastUpdated": "2025-01-12",
     "schema": "Supports drag-and-drop UI configuration and detailed CAN protocol implementation"
   },

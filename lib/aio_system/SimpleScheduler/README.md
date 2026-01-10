@@ -1,6 +1,6 @@
 # SimpleScheduler
 
-A lightweight, zero-allocation task scheduler for the AiO New Dawn agricultural control system.
+A lightweight, zero-allocation task scheduler for the AiO v26 agricultural control system.
 
 ## Features
 

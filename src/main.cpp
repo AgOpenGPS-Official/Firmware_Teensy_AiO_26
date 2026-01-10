@@ -237,7 +237,7 @@ void setup()
   delay(5000); // delay for time to start monitor
   Serial.begin(115200);
 
-  Serial.print("\r\n\n=== Teensy 4.1 AiO-NG-v6 New Dawn v");
+  Serial.print("\r\n\n=== Teensy 4.1 AiO-NG-v6 v26 v");
   Serial.print(FIRMWARE_VERSION);
   Serial.print(" ===\r\n");
   Serial.print("Initializing subsystems...");
@@ -545,7 +545,7 @@ void setup()
   localIP = Ethernet.localIP();  // Reuse existing variable
   Serial.println("\r\n");
   Serial.println("========================================");
-  Serial.println("=== AiO New Dawn - System Ready ===");
+  Serial.println("=== AiO v26 - System Ready ===");
   Serial.println("========================================");
   Serial.printf("IP Address: %d.%d.%d.%d\r\n", localIP[0], localIP[1], localIP[2], localIP[3]);
   Serial.printf("Web Interface: http://%d.%d.%d.%d\r\n", localIP[0], localIP[1], localIP[2], localIP[3]);

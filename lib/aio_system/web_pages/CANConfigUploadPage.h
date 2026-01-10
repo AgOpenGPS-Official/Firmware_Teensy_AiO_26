@@ -19,7 +19,7 @@ const char CAN_CONFIG_UPLOAD_PAGE[] PROGMEM = R"rawliteral(
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <title>CAN Config Upload - AiO New Dawn</title>
+    <title>CAN Config Upload - AiO v26</title>
     <link rel="stylesheet" href="/touch.css">
     <style>
         .info-box {

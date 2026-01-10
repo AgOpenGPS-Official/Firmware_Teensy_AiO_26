@@ -1,10 +1,10 @@
 # CANBUS Implementation Context and Continuity Guide
 
 ## Project Overview
-Integrating CANBUS support into AiO New Dawn to enable steer-ready tractor control. This document ensures continuity across conversation compaction events.
+Integrating CANBUS support into AiO v26 to enable steer-ready tractor control. This document ensures continuity across conversation compaction events.
 
 ## Current State
-- **Project**: AiO New Dawn (Teensy 4.1 agricultural control system)
+- **Project**: AiO v26 (Teensy 4.1 agricultural control system)
 - **Goal**: Add native CANBUS support for modern tractors
 - **Reference**: AgOpenGPS CANBUS firmware (analyzed from GitHub)
 - **Performance Baseline**: 541kHz loop frequency (must maintain)
@@ -28,7 +28,7 @@ Integrating CANBUS support into AiO New Dawn to enable steer-ready tractor contr
 2. **BrandHandler**: Interface pattern for brand-specific logic
 3. **CANSteerReadyDriver**: Implements MotorDriverInterface
 4. **SimpleScheduler**: 50Hz task for CAN processing
-5. **Zero dynamic allocation**: Follow New Dawn patterns
+5. **Zero dynamic allocation**: Follow v26 patterns
 
 ## Implementation Checkpoints
 
@@ -134,7 +134,7 @@ lib/aio_canbus/brands/
 ### Memory Management
 - NO dynamic allocation (no new/malloc)
 - Fixed-size message buffers
-- Reuse existing New Dawn patterns
+- Reuse existing v26 patterns
 
 ### Timing Constraints
 - CAN processing must complete in <100μs

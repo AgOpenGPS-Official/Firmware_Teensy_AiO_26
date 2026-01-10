@@ -9,7 +9,7 @@
 - Pin ownership tracking exists but actual pin numbers are duplicated everywhere
 - Architecture half-finished - infrastructure exists but isn't used consistently
 
-**Scope**: This refactor is for **v5.0 New Dawn hardware ONLY**. We are NOT creating a multi-board variant system.
+**Scope**: This refactor is for **v5.0 v26 hardware ONLY**. We are NOT creating a multi-board variant system.
 
 ## Current State Analysis
 
@@ -314,5 +314,5 @@ This refactor brings HardwareManager to the same high compliance level as Config
 
 **Document Status**: Planning
 **Created**: 2025-01-16
-**Scope**: v5.0 New Dawn hardware only
+**Scope**: v5.0 v26 hardware only
 **Priority**: Medium (architectural cleanup, not critical bug)

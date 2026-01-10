@@ -1,7 +1,7 @@
-# Hardware Ownership Matrix for AiO New Dawn
+# Hardware Ownership Matrix for AiO v26
 
 ## Overview
-This document defines clear hardware ownership for the AiO New Dawn firmware to prevent conflicts and ensure proper initialization.
+This document defines clear hardware ownership for the AiO v26 firmware to prevent conflicts and ensure proper initialization.
 
 ## Pin Ownership Matrix
 

@@ -1,4 +1,4 @@
-# CANBUS Implementation Plan for AiO New Dawn
+# CANBUS Implementation Plan for AiO v26
 
 ## Overview
 This phased implementation plan includes specific milestones with compile/test checkpoints. No progression to the next milestone until all tests pass and issues are resolved.

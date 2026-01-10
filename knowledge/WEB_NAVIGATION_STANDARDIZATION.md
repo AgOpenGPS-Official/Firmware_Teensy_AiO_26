@@ -2,7 +2,7 @@
 
 ## Summary of Changes
 
-This document describes the standardization of navigation buttons across all web pages in the AiO New Dawn firmware.
+This document describes the standardization of navigation buttons across all web pages in the AiO v26 firmware.
 
 ## Navigation Layout Standard
 

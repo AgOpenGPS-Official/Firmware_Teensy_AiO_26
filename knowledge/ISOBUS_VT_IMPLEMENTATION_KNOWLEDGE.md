@@ -1,16 +1,16 @@
 # ISOBUS VT Implementation Knowledge Base
 
 ## Summary
-This document captures all the learning from attempting to implement ISOBUS VT support for the New Dawn project.
+This document captures all the learning from attempting to implement ISOBUS VT support for the v26 project.
 
 ## Problem Statement
-AgOpenGPS users want ISOBUS Virtual Terminal (VT) support to display information on tractor displays. The AgIsoStack library provides comprehensive ISOBUS support but is too large to fit in the Teensy 4.1's memory alongside New Dawn's existing features.
+AgOpenGPS users want ISOBUS Virtual Terminal (VT) support to display information on tractor displays. The AgIsoStack library provides comprehensive ISOBUS support but is too large to fit in the Teensy 4.1's memory alongside v26's existing features.
 
 ## Memory Analysis
 
 ### Teensy 4.1 Memory Layout
 - ITCM (Instruction Tightly Coupled Memory): 512KB total
-- Current New Dawn usage: 310KB
+- Current v26 usage: 310KB
 - AgIsoStack requires: ~141KB additional
 - Available space: ~202KB (not enough)
 

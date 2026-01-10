@@ -2,7 +2,7 @@
 
 ## Overview
 
-The AiO New Dawn firmware (v1.0.19-beta and later) includes support for John Deere Autotrac PWM encoders as a steering wheel motion detection (kickout) method. This feature allows tractors equipped with John Deere's PWM-based steering wheel encoders to detect manual steering input and disengage autosteer accordingly.
+The AiO v26 firmware (v1.0.19-beta and later) includes support for John Deere Autotrac PWM encoders as a steering wheel motion detection (kickout) method. This feature allows tractors equipped with John Deere's PWM-based steering wheel encoders to detect manual steering input and disengage autosteer accordingly.
 
 ## How It Works
 

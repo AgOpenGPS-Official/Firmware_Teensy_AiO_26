@@ -1,6 +1,6 @@
 // ESP32_BRIDGE_EXAMPLE.cpp
-// Example ESP32 code for New Dawn Serial-to-WiFi Bridge
-// This demonstrates the basic structure needed to communicate with New Dawn
+// Example ESP32 code for v26 Serial-to-WiFi Bridge
+// This demonstrates the basic structure needed to communicate with v26
 
 #include <Arduino.h>
 
