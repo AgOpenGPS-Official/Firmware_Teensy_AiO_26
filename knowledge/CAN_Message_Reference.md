@@ -1,6 +1,6 @@
-# CAN Message Reference - AiO New Dawn
+# CAN Message Reference - AiO v26
 
-This document contains all CAN message IDs and payloads implemented in the AiO New Dawn firmware.
+This document contains all CAN message IDs and payloads implemented in the AiO v26 firmware.
 
 ## Table of Contents
 - [Keya Motor](#keya-motor)

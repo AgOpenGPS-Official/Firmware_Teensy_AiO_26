@@ -17,7 +17,7 @@ const char SIMPLE_OTA_UPDATE_PAGE_FIXED[] PROGMEM = R"rawliteral(
 <html>
 <head>
     <meta name='viewport' content='width=device-width, initial-scale=1'>
-    <title>OTA Update - AiO New Dawn</title>
+    <title>OTA Update - AiO v26</title>
     <style>
         body {
             font-family: Arial, sans-serif;

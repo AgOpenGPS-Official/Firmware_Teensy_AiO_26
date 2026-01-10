@@ -1,10 +1,10 @@
 # How to Add New Translation Pages
 
-This guide explains how to create and add new translation pages to the AiO New Dawn web interface. It's written for team members and developers of all skill levels.
+This guide explains how to create and add new translation pages to the AiO v26 web interface. It's written for team members and developers of all skill levels.
 
 ## Overview
 
-The AiO New Dawn web interface supports multiple languages. Currently, we have:
+The AiO v26 web interface supports multiple languages. Currently, we have:
 - English (EN) - Primary language for all pages
 - German (DE) - Example translation for the homepage only
 
@@ -153,8 +153,8 @@ Open `lib/aio_system/web_pages/fr/home.html` in your editor and translate the co
 
 ```html
 <!-- Original English -->
-<title>AiO New Dawn</title>
-<h1>AiO New Dawn Status</h1>
+<title>AiO v26</title>
+<h1>AiO v26 Status</h1>
 <h2>Network Information</h2>
 <button onclick="location.reload()">Refresh</button>
 

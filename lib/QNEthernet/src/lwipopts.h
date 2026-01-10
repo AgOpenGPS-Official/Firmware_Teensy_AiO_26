@@ -132,7 +132,7 @@ void sys_check_core_locking(const char *file, int line, const char *func);
 // #define RAW_TTL  IP_DEFAULT_TTL
 
 // DHCP options
-// Disabled: AiO New Dawn uses static IP configuration
+// Disabled: AiO v26 uses static IP configuration
 // However, we run a custom DHCP server (DHCPLite) on port 67, so accept that port
 #ifndef LWIP_DHCP
 #define LWIP_DHCP                       0  /* LWIP_UDP */
@@ -149,7 +149,7 @@ void sys_check_core_locking(const char *file, int line, const char *func);
 #define LWIP_IP_ACCEPT_UDP_PORT(port) ((port) == 67)
 
 // AUTOIP options
-// Disabled: AiO New Dawn uses static IP, AutoIP not needed
+// Disabled: AiO v26 uses static IP, AutoIP not needed
 #if !defined(LWIP_MDNS_RESPONDER) || LWIP_MDNS_RESPONDER
 // #define LWIP_AUTOIP                 1
 // #define LWIP_DHCP_AUTOIP_COOP       (LWIP_DHCP && LWIP_AUTOIP)
@@ -170,13 +170,13 @@ void sys_check_core_locking(const char *file, int line, const char *func);
    ((LWIP_IGMP || LWIP_IPV6_MLD) && (LWIP_UDP || LWIP_RAW))*/
 
 // IGMP options
-// Disabled: Multicast not used by AiO New Dawn
+// Disabled: Multicast not used by AiO v26
 #ifndef LWIP_IGMP
 #define LWIP_IGMP 0  /* 1 */
 #endif  // !LWIP_IGMP
 
 // DNS options
-// Disabled: AiO New Dawn only uses IP addresses, not hostnames
+// Disabled: AiO v26 only uses IP addresses, not hostnames
 #ifndef LWIP_DNS
 #define LWIP_DNS                                0  /* LWIP_UDP */
 #endif  // !LWIP_DNS
@@ -534,7 +534,7 @@ void sys_check_core_locking(const char *file, int line, const char *func);
   } while (0)  /* do { (sec) = 0; (us) = 0; } while(0) */
 
 // MDNS options (mdns_opts.h)
-// Disabled: mDNS/Bonjour not used by AiO New Dawn
+// Disabled: mDNS/Bonjour not used by AiO v26
 #ifndef LWIP_MDNS_RESPONDER
 #define LWIP_MDNS_RESPONDER 0  /* LWIP_UDP && LWIP_IGMP */
 // If you change LWIP_MDNS_RESPONDER to zero here then:

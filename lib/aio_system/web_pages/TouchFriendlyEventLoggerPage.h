@@ -19,7 +19,7 @@ const char TOUCH_FRIENDLY_EVENT_LOGGER_PAGE[] PROGMEM = R"rawliteral(
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <title>Event Logger - AiO New Dawn</title>
+    <title>Event Logger - AiO v26</title>
     <link rel="stylesheet" href="/touch.css">
     <style>
         /* Additional styles specific to event logger */

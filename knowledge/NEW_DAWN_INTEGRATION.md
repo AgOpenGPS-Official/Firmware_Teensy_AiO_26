@@ -1,7 +1,7 @@
 # Little Dawn Serial Integration for AiO_New_Dawn
 
 ## Context
-I have an ESP32 co-processor called "Little Dawn" that will handle ISOBUS communication. It's connected via serial to the Teensy 4.1. We need to add serial communication to send WAS (Wheel Angle Sensor) data from New Dawn to Little Dawn.
+I have an ESP32 co-processor called "Little Dawn" that will handle ISOBUS communication. It's connected via serial to the Teensy 4.1. We need to add serial communication to send WAS (Wheel Angle Sensor) data from v26 to Little Dawn.
 
 ## Hardware Connection
 - Use SerialESP32 on Teensy 4.1 (Serial2, pins 7/8)
@@ -58,7 +58,7 @@ void sendToLittleDawn(uint8_t id, const uint8_t* data, uint8_t length) {
 void sendMachineStatus() {
   MachineStatus status;
   
-  // Use existing New Dawn variables
+  // Use existing v26 variables
   status.speed = (int16_t)(speedKph * 100);           // Convert to 0.01 km/h units
   status.heading = (int16_t)(heading * 10);           // If available, in 0.1 degree units
   status.roll = (int16_t)(roll * 10);                 // If available, in 0.1 degree units
@@ -90,7 +90,7 @@ if (millis() - lastLittleDawnUpdate > 100) {
 
 ## Variables to Check/Adjust
 
-Please check what the actual variable names are in New Dawn for:
+Please check what the actual variable names are in v26 for:
 - `speedKph` - The current speed in km/h
 - `steerAngle` - The WAS reading (might be called `wasAngle` or similar)
 - `heading` - If available from GPS/IMU

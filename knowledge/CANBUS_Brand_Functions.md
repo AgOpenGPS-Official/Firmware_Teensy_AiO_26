@@ -1,6 +1,6 @@
 # CAN Bus Functions by Tractor Brand
 
-This document outlines the CAN bus functions available for each supported tractor brand in the AiO New Dawn system.
+This document outlines the CAN bus functions available for each supported tractor brand in the AiO v26 system.
 
 ## Overview
 

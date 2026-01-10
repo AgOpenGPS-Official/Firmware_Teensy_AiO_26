@@ -5,7 +5,7 @@
 // Like most Arduino code, portions of this are based on other open source Arduino code with a compatiable license.
 
 // SimpleScheduler.h
-// Lightweight task scheduler for AiO New Dawn
+// Lightweight task scheduler for AiO v26
 // Zero dynamic allocation, minimal overhead design
 
 #ifndef SIMPLE_SCHEDULER_H

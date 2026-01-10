@@ -1,10 +1,10 @@
 # Communication and Networking
 
-This document describes the communication interfaces and networking capabilities of AiO New Dawn.
+This document describes the communication interfaces and networking capabilities of AiO v26.
 
 ## Overview
 
-AiO New Dawn implements multiple communication protocols to interface with AgOpenGPS, sensors, actuators, and user interfaces. The system is built around reliable UDP communication with support for serial, CAN, I2C, and web interfaces.
+AiO v26 implements multiple communication protocols to interface with AgOpenGPS, sensors, actuators, and user interfaces. The system is built around reliable UDP communication with support for serial, CAN, I2C, and web interfaces.
 
 ## Network Communication
 

@@ -1,6 +1,6 @@
 # CAN Configuration Examples
 
-This directory contains pre-configured CAN bus configuration files for specific tractor brands. These files can be uploaded to your AiO New Dawn device via the web interface to quickly configure CAN settings for your equipment.
+This directory contains pre-configured CAN bus configuration files for specific tractor brands. These files can be uploaded to your AiO v26 device via the web interface to quickly configure CAN settings for your equipment.
 
 ## Overview
 
@@ -35,7 +35,7 @@ Each JSON file contains a complete, ready-to-use configuration for a specific tr
 
 ### Upload via Web Interface
 
-1. Connect to your AiO New Dawn device at http://192.168.5.126/
+1. Connect to your AiO v26 device at http://192.168.5.126/
 2. Navigate to the CAN Configuration page
 3. Click the "Upload Configuration" or drag-and-drop area
 4. Select the appropriate JSON file for your tractor brand
@@ -127,7 +127,7 @@ This minimal default keeps firmware size small while providing maximum flexibili
 For more information about:
 - CAN configuration syntax, see `/knowledge/CAN_DRAG_DROP_INTERFACE_PLAN.md`
 - Specific CAN protocols, see `/knowledge/CANInfo_v2.json`
-- Hardware connections, see the AiO New Dawn hardware documentation
+- Hardware connections, see the AiO v26 hardware documentation
 
 ## Version History
 

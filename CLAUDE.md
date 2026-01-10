@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**AiO New Dawn** is a Teensy 4.1-based "All-in-One" agricultural autosteer controller for AgOpenGPS. It provides:
+**AiO v26** is a Teensy 4.1-based "All-in-One" agricultural autosteer controller for AgOpenGPS. It provides:
 - GPS/GNSS positioning with dual-antenna heading
 - IMU-based roll/heading compensation
 - Autosteer motor control (PWM, Keya CAN, Danfoss hydraulic)

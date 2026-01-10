@@ -1,10 +1,10 @@
 {
   "name": "aio_system",
   "version": "1.0.0",
-  "description": "AiO New Dawn System Components",
+  "description": "AiO v26 System Components",
   "keywords": ["system", "logging", "network"],
   "authors": {
-    "name": "AiO New Dawn Team"
+    "name": "AiO v26 Team"
   },
   "dependencies": [
     {"name": "QNEthernet"},

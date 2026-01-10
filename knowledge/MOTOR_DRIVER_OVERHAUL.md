@@ -6,7 +6,7 @@ The presence of one of these 3 steering setups will be detected in the following
 
 - Keya Canbus
     - Detected by the presence of heartbeat 0x700001 messages on CANBUS 3.
-    - Controlled by the current New Dawn code for Keya for speed, direction and kickout.
+    - Controlled by the current v26 code for Keya for speed, direction and kickout.
 - Danfoss valve
     - Detected by PGN251 Byte 8 = 0x01
     - Controlled by Outputs 5 & 6. Output 5 HIGH to enable steering. Output 6:  Nominal 12v analog output. 50% = Center, 25% Full Left & 75% = Full right. 

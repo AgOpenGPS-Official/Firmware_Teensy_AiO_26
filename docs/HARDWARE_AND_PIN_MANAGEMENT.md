@@ -1,10 +1,10 @@
 # Hardware and Pin Management
 
-This document describes the hardware abstraction layer and pin management system in AiO New Dawn.
+This document describes the hardware abstraction layer and pin management system in AiO v26.
 
 ## Overview
 
-AiO New Dawn uses a sophisticated pin ownership and resource management system to prevent hardware conflicts and ensure reliable operation across different hardware configurations.
+AiO v26 uses a sophisticated pin ownership and resource management system to prevent hardware conflicts and ensure reliable operation across different hardware configurations.
 
 ## Key Components
 

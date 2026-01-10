@@ -1,10 +1,10 @@
 # Web Interface Documentation
 
-This document describes the web interface implementation in AiO New Dawn, including the lightweight HTTP server, WebSocket communication, and available configuration pages.
+This document describes the web interface implementation in AiO v26, including the lightweight HTTP server, WebSocket communication, and available configuration pages.
 
 ## Overview
 
-AiO New Dawn includes a custom lightweight web server that provides:
+AiO v26 includes a custom lightweight web server that provides:
 - System configuration without external dependencies
 - Real-time telemetry via WebSocket
 - Responsive design for desktop and mobile
@@ -263,7 +263,7 @@ All pages include common CSS from `CommonStyles.h`:
 <html>
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>AiO New Dawn - Page Title</title>
+    <title>AiO v26 - Page Title</title>
     <style>
         /* CommonStyles included here */
     </style>
