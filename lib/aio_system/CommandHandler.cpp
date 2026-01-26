@@ -9,6 +9,7 @@
 #include "HardwareManager.h"
 #include "SimpleScheduler/SimpleScheduler.h"
 #include "SerialManager.h"
+#include "NAVProcessor.h"
 
 // External function declarations
 extern void toggleLoopTiming();
@@ -169,6 +170,11 @@ void CommandHandler::handleCommand(char cmd) {
             }
             break;
 
+        case 'g':  // GPS->UDP latency display
+        case 'G':
+            NAVProcessor::getInstance()->toggleLatencyDisplay();
+            break;
+
         case '?':
         case 'h':
         case 'H':
@@ -240,6 +246,7 @@ void CommandHandler::showMenu() {
     Serial.print("\r\nB - Test buzzer");
     Serial.print("\r\nV - Toggle buzzer volume (loud/quiet)");
     Serial.print("\r\nC - Show scheduler status");
+    Serial.print("\r\nG - Toggle GPS->UDP latency display");
     Serial.print("\r\nM - Start serial buffer monitoring");
     Serial.print("\r\nU - View serial buffer usage");
     Serial.print("\r\nZ - Print scheduler timing stats");

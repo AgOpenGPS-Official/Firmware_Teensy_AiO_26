@@ -218,9 +218,7 @@ void taskNetworkCheck() {
   EventLogger::getInstance()->checkNetworkReady();
 }
 
-void taskNAVProcess() {
-  NAVProcessor::getInstance()->process();
-}
+// taskNAVProcess removed - GPS->UDP now handled by async callback from GNSSProcessor
 
 void taskKickoutSendPGN250() {
   KickoutMonitor::getInstance()->sendPGN250();
@@ -237,7 +235,7 @@ void setup()
   delay(5000); // delay for time to start monitor
   Serial.begin(115200);
 
-  Serial.print("\r\n\n=== Teensy 4.1 AiO-NG-v6 v26 v");
+  Serial.print("\r\n\n=== Teensy 4.1 - AiO v");
   Serial.print(FIRMWARE_VERSION);
   Serial.print(" ===\r\n");
   Serial.print("Initializing subsystems...");
@@ -427,6 +425,13 @@ void setup()
   NAVProcessor::init();
   LOG_INFO(EventSource::SYSTEM, "NAVProcessor initialized");
 
+  // Register async callback for immediate GPS message forwarding
+  // This eliminates the 0-100ms latency from 10Hz polling
+  gnssProcessor.setPositionCallback([]() {
+      NAVProcessor::getInstance()->sendImmediately();
+  });
+  LOG_INFO(EventSource::SYSTEM, "GPS->NAV async callback registered");
+
   // NOW initialize AsyncUDP after ALL hardware is up
   LOG_INFO(EventSource::SYSTEM, "All hardware initialized, starting AsyncUDP");
   QNEthernetUDPHandler::init();
@@ -530,7 +535,8 @@ void setup()
   // Add 10Hz tasks (UI and status)
   scheduler.addTask(SimpleScheduler::HZ_10, taskLEDUpdate, "LED Update");
   scheduler.addTask(SimpleScheduler::HZ_10, taskNetworkCheck, "Network Check");
-  scheduler.addTask(SimpleScheduler::HZ_10, taskNAVProcess, "NAV Process");
+  // NAV Process now handled by async callback from GNSSProcessor
+  // scheduler.addTask(SimpleScheduler::HZ_10, taskNAVProcess, "NAV Process");
   scheduler.addTask(SimpleScheduler::HZ_10, taskKickoutSendPGN250, "PGN250 Send");
   // Buffer stats disabled - only enable when actually monitoring
   // scheduler.addTask(SimpleScheduler::HZ_10, taskBufferStats, "Buffer Stats");
@@ -539,7 +545,7 @@ void setup()
   }, "CommandHandler");
 
   LOG_INFO(EventSource::SYSTEM, "SimpleScheduler initialized with %d tasks",
-           5 + 8 + 3 + 1 + 5); // EVERY_LOOP + 100Hz + 50Hz + 10Hz
+           5 + 8 + 3 + 1 + 4); // EVERY_LOOP + 100Hz + 50Hz + 10Hz (NAVProcess now async)
 
   // Display access information
   localIP = Ethernet.localIP();  // Reuse existing variable

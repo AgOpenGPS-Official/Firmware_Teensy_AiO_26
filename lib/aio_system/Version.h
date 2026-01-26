@@ -7,8 +7,8 @@
 #ifndef VERSION_H
 #define VERSION_H
 
-// AiO v26 firmware version
-#define FIRMWARE_VERSION "26.1" // 
+// AiO New Dawn firmware version
+#define FIRMWARE_VERSION "26.2" // Async GPS-to-UDP pipeline 
 
 // Teensy board type for OTA identification
 #define TEENSY_BOARD_TYPE "Teensy41"

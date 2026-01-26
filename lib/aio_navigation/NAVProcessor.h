@@ -21,65 +21,60 @@ enum class NavMessageType {
 class NAVProcessor {
 private:
     static NAVProcessor* instance;
-    
-    
+
     // Message buffer
     static constexpr size_t BUFFER_SIZE = 256;
     char messageBuffer[BUFFER_SIZE];
-    
-    // Timing control - Now handled by SimpleScheduler at 10Hz
-    static constexpr uint32_t MESSAGE_INTERVAL_MS = 100;  // Default 10Hz (kept for compatibility)
-    
-    // Track when we last sent GPS data to AgIO
+
+    // Track when we last sent GPS data to AgIO (for hasGPSDataFlow check)
     uint32_t lastGPSMessageTime;
-    
-    // Track last GPS update time to detect duplicates
-    uint32_t lastGPSUpdateTime;
-    
-    // Track last sent PAOGI position for duplicate detection
-    double lastPAOGILatitude;
-    double lastPAOGILongitude;
-    
+
+    // Latency monitoring
+    bool latencyDisplayEnabled;
+    uint32_t latencySum;
+    uint32_t latencyCount;
+    uint32_t latencyMin;
+    uint32_t latencyMax;
+    uint32_t lastLatencyReportTime;
+
     // Private constructor for singleton
     NAVProcessor();
-    
+
     // Message formatting methods
     NavMessageType selectMessageType();
     bool formatPANDAMessage();
     bool formatPAOGIMessage();
-    
+
     // Utility methods
-    void convertToNMEACoordinates(double decimalDegrees, bool isLongitude, 
+    void convertToNMEACoordinates(double decimalDegrees, bool isLongitude,
                                   double& nmeaValue, char& direction);
     uint8_t calculateNMEAChecksum(const char* sentence);
     float convertGPStoUTC(uint16_t gpsWeek, float gpsSeconds);
     void sendMessage(const char* message);
-    
+
 public:
     ~NAVProcessor();
-    
+
     // Singleton access
     static NAVProcessor* getInstance();
     static void init();
-    
-    // Main processing method
-    void process();
-    
-    // Check if we have new GPS data since last send
-    bool hasNewGPSData() const;
-    
-    // Configuration
-    void setMessageRate(uint32_t intervalMs);
-    
+
+    // Immediate send method - called by GNSSProcessor callback
+    void sendImmediately();
+
     // Status and debugging
     void printStatus();
     uint32_t getLastGPSMessageTime() const { return lastGPSMessageTime; }
     NavMessageType getCurrentMessageType();
-    
+
     // GPS data flow status - are we sending GPS data to AgIO?
     bool hasGPSDataFlow() const {
         return (millis() - lastGPSMessageTime) < 5000;
     }
+
+    // Latency monitoring
+    void toggleLatencyDisplay();
+    bool isLatencyDisplayEnabled() const { return latencyDisplayEnabled; }
 };
 
 // Global instance declaration
