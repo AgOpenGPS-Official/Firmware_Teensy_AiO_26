@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document outlines the design and implementation plan for a modern, touch-friendly drag-and-drop interface for configuring CAN bus functions in the AiO New Dawn system. The interface allows users to visually assign functions (steering, buttons, hitch, etc.) to different CAN buses based on their tractor brand.
+This document outlines the design and implementation plan for a modern, touch-friendly drag-and-drop interface for configuring CAN bus functions in the AiO v26 system. The interface allows users to visually assign functions (steering, buttons, hitch, etc.) to different CAN buses based on their tractor brand.
 
 ## Requirements
 

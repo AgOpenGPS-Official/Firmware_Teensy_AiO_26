@@ -1,6 +1,6 @@
-# AiO New Dawn Documentation
+# AiO v26 Documentation
 
-Welcome to the AiO New Dawn documentation. This folder contains comprehensive documentation for understanding, configuring, and developing with the AiO New Dawn agricultural control system.
+Welcome to the AiO v26 documentation. This folder contains comprehensive documentation for understanding, configuring, and developing with the AiO v26 agricultural control system.
 
 ## Documentation Overview
 
@@ -56,7 +56,7 @@ Welcome to the AiO New Dawn documentation. This folder contains comprehensive do
 
 ## Getting Started
 
-If you're new to AiO New Dawn, we recommend reading the documentation in this order:
+If you're new to AiO v26, we recommend reading the documentation in this order:
 
 1. Start with [ARCHITECTURE_OVERVIEW.md](ARCHITECTURE_OVERVIEW.md) to understand the system
 2. Review [LED_Status_Guide.md](LED_Status_Guide.md) to understand status indicators
@@ -65,7 +65,7 @@ If you're new to AiO New Dawn, we recommend reading the documentation in this or
 
 ## For Developers
 
-If you're planning to modify or extend AiO New Dawn:
+If you're planning to modify or extend AiO v26:
 
 1. Study [CLASS_INTERACTION_DIAGRAM.md](CLASS_INTERACTION_DIAGRAM.md) for code structure
 2. Review [HARDWARE_AND_PIN_MANAGEMENT.md](HARDWARE_AND_PIN_MANAGEMENT.md) before adding hardware

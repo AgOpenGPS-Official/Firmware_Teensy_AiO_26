@@ -1,10 +1,10 @@
-# AiO New Dawn Architecture Overview
+# AiO v26 Architecture Overview
 
-This document provides a high-level overview of the AiO New Dawn system architecture and its key components.
+This document provides a high-level overview of the AiO v26 system architecture and its key components.
 
 ## System Overview
 
-AiO New Dawn is a modular agricultural control system built on the Teensy 4.1 platform. It integrates GPS/GNSS navigation, automated steering, section control, and network communication to work with AgOpenGPS.
+AiO v26 is a modular agricultural control system built on the Teensy 4.1 platform. It integrates GPS/GNSS navigation, automated steering, section control, and network communication to work with AgOpenGPS.
 
 ## Core Architecture Principles
 

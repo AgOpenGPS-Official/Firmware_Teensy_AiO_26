@@ -1,8 +1,8 @@
-# Performance Optimization Analysis for AiO New Dawn
+# Performance Optimization Analysis for AiO v26
 
 ## Executive Summary
 
-This document outlines various performance optimization strategies for the AiO New Dawn firmware running on Teensy 4.1 without an RTOS. The analysis was prompted by observed BNO sensor missed messages and concerns about timing-critical task execution.
+This document outlines various performance optimization strategies for the AiO v26 firmware running on Teensy 4.1 without an RTOS. The analysis was prompted by observed BNO sensor missed messages and concerns about timing-critical task execution.
 
 ## Current Architecture Overview
 

@@ -19,7 +19,7 @@ const char TOUCH_FRIENDLY_DEVICE_SETTINGS_PAGE[] PROGMEM = R"rawliteral(
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <title>Device Settings - AiO New Dawn</title>
+    <title>Device Settings - AiO v26</title>
     <link rel="stylesheet" href="/touch.css">
     <style>
         /* Additional styles specific to device settings */

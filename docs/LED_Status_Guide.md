@@ -1,6 +1,6 @@
-# AiO New Dawn Front Panel LED Status Guide
+# AiO v26 Front Panel LED Status Guide
 
-This guide explains the meaning of the four status LEDs on the front panel of the AiO New Dawn board.
+This guide explains the meaning of the four status LEDs on the front panel of the AiO v26 board.
 
 ## LED Overview
 

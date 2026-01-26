@@ -1,8 +1,8 @@
-# CANBUS Integration Proposal for AiO New Dawn
+# CANBUS Integration Proposal for AiO v26
 
 ## Executive Summary
 
-This proposal outlines the integration of CANBUS functionality into the AiO New Dawn system to support steer-ready tractors. The implementation will be based on the proven CANBUS firmware from AgOpenGPS, adapted to New Dawn's modular architecture.
+This proposal outlines the integration of CANBUS functionality into the AiO v26 system to support steer-ready tractors. The implementation will be based on the proven CANBUS firmware from AgOpenGPS, adapted to v26's modular architecture.
 
 ## Current CANBUS Implementations Analysis
 
@@ -29,7 +29,7 @@ This proposal outlines the integration of CANBUS functionality into the AiO New 
    - Hitch position monitoring
    - Brand-specific message protocols
 
-## Proposed Architecture for New Dawn
+## Proposed Architecture for v26
 
 ### 1. New Library Structure
 ```
@@ -217,4 +217,4 @@ void taskCANBUS() {
 
 ## Conclusion
 
-Integrating CANBUS support into New Dawn will significantly expand its compatibility with modern agricultural equipment while maintaining the system's modular architecture and performance standards. The proposed design leverages proven implementations while adapting them to New Dawn's superior framework.
+Integrating CANBUS support into v26 will significantly expand its compatibility with modern agricultural equipment while maintaining the system's modular architecture and performance standards. The proposed design leverages proven implementations while adapting them to v26's superior framework.

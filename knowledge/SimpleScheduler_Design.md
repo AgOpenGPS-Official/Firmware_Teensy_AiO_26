@@ -1,7 +1,7 @@
 # SimpleScheduler Design Document
 
 ## Executive Summary
-This document outlines the design and implementation of SimpleScheduler, a lightweight task scheduling system for the AiO New Dawn agricultural control system. SimpleScheduler aims to replace the current distributed timing logic (20+ separate timing checks) with a centralized, efficient scheduler while maintaining the critical 320kHz+ main loop frequency.
+This document outlines the design and implementation of SimpleScheduler, a lightweight task scheduling system for the AiO v26 agricultural control system. SimpleScheduler aims to replace the current distributed timing logic (20+ separate timing checks) with a centralized, efficient scheduler while maintaining the critical 320kHz+ main loop frequency.
 
 ## Table of Contents
 1. [Background and Context](#background-and-context)
@@ -14,7 +14,7 @@ This document outlines the design and implementation of SimpleScheduler, a light
 ## Background and Context
 
 ### Project Context
-- **System**: AiO New Dawn - Teensy 4.1-based agricultural control system for AgOpenGPS
+- **System**: AiO v26 - Teensy 4.1-based agricultural control system for AgOpenGPS
 - **Current Performance**: ~320kHz main loop frequency (3.125μs per loop)
 - **Problem**: Scattered timing logic across 20+ modules makes maintenance difficult and adds overhead
 - **Solution**: SimpleScheduler - following the successful "Simple" library pattern (SimpleWebManager, etc.)
@@ -40,7 +40,7 @@ This document outlines the design and implementation of SimpleScheduler, a light
 ## Current Timing Architecture Analysis
 
 ### Overview
-The AiO New Dawn codebase currently uses a distributed timing approach where each module maintains its own timing logic. This analysis identified over 20 different timing patterns scattered throughout the codebase.
+The AiO v26 codebase currently uses a distributed timing approach where each module maintains its own timing logic. This analysis identified over 20 different timing patterns scattered throughout the codebase.
 
 ### Current Timing Patterns
 

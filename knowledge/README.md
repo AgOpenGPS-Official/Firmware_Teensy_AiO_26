@@ -1,10 +1,10 @@
-# ISOBUS VT Support for New Dawn
+# ISOBUS VT Support for v26
 
 ## Overview
-This module provides ISOBUS Virtual Terminal (VT) support for the New Dawn board, allowing it to display information on ISOBUS-compatible displays commonly found in agricultural equipment.
+This module provides ISOBUS Virtual Terminal (VT) support for the v26 board, allowing it to display information on ISOBUS-compatible displays commonly found in agricultural equipment.
 
 ## Current Status
-The ISOBUS VT feature is **disabled by default** due to memory constraints. The AgIsoStack library is quite large and causes the Teensy 4.1's ITCM (Instruction Tightly Coupled Memory) to overflow when combined with all other New Dawn features.
+The ISOBUS VT feature is **disabled by default** due to memory constraints. The AgIsoStack library is quite large and causes the Teensy 4.1's ITCM (Instruction Tightly Coupled Memory) to overflow when combined with all other v26 features.
 
 ## Memory Issue
 - The Teensy 4.1 has 512KB of ITCM (fast instruction memory)
@@ -39,7 +39,7 @@ lib_deps =
 ```
 
 ### Option 3: Use External ISOBUS Module
-Consider using a separate microcontroller (e.g., ESP32) as a dedicated ISOBUS gateway communicating with New Dawn via CAN or serial.
+Consider using a separate microcontroller (e.g., ESP32) as a dedicated ISOBUS gateway communicating with v26 via CAN or serial.
 
 ## Features When Enabled
 
@@ -76,5 +76,5 @@ Potential solutions for the memory issue:
 
 To test with an ISOBUS VT:
 1. Enable the feature in platformio.ini
-2. Connect ISOBUS VT to CAN2 (pins 0/1 on New Dawn)
+2. Connect ISOBUS VT to CAN2 (pins 0/1 on v26)
 3. Power on - the VT should show the Hello World screen

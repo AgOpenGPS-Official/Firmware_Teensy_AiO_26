@@ -1,4 +1,4 @@
-⏺ Proposal: ESP32-Initiated Communication Protocol for AiO New Dawn
+⏺ Proposal: ESP32-Initiated Communication Protocol for AiO v26
 
 Background
 

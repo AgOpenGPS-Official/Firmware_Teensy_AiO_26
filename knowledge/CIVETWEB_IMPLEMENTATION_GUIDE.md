@@ -1,7 +1,7 @@
-# CivetWeb Implementation Guide for AiO New Dawn
+# CivetWeb Implementation Guide for AiO v26
 
 ## Overview
-This guide provides step-by-step instructions for properly integrating CivetWeb into the AiO New Dawn project for WebSocket telemetry streaming.
+This guide provides step-by-step instructions for properly integrating CivetWeb into the AiO v26 project for WebSocket telemetry streaming.
 
 ## File Structure
 ```

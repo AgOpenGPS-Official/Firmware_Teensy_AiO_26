@@ -1,7 +1,7 @@
 # WebSocket Migration: Lessons Learned
 
 ## Overview
-This document captures lessons learned from the initial attempt to migrate from AsyncWebServer to CivetWeb for WebSocket support in the AiO New Dawn project.
+This document captures lessons learned from the initial attempt to migrate from AsyncWebServer to CivetWeb for WebSocket support in the AiO v26 project.
 
 ## Background
 - **Problem**: AsyncWebServer's SSE functionality is broken, forcing polling which cannot support 100Hz telemetry updates

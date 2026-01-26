@@ -550,9 +550,9 @@ void setup()
   // Display access information
   localIP = Ethernet.localIP();  // Reuse existing variable
   Serial.println("\r\n");
-  Serial.println("================================");
-  Serial.println("=== AiO - System Ready ===");
-  Serial.println("================================");
+  Serial.println("========================================");
+  Serial.println("=== AiO v26 - System Ready ===");
+  Serial.println("========================================");
   Serial.printf("IP Address: %d.%d.%d.%d\r\n", localIP[0], localIP[1], localIP[2], localIP[3]);
   Serial.printf("Web Interface: http://%d.%d.%d.%d\r\n", localIP[0], localIP[1], localIP[2], localIP[3]);
   Serial.println("DHCP Server: Enabled");
