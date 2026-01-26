@@ -17,12 +17,12 @@ const char SIMPLE_HOME_PAGE[] PROGMEM = R"rawliteral(
 <html>
 <head>
     <meta name='viewport' content='width=device-width, initial-scale=1'>
-    <title>AiO New Dawn</title>
+    <title>AiO v26</title>
     <style>%CSS_STYLES%</style>
 </head>
 <body>
     <div class='container'>
-        <h1>AgOpenGPS AiO New Dawn</h1>
+        <h1>AgOpenGPS AiO v26</h1>
         <div class='status' id='status'>System Status: <span id='statusText'>Connecting...</span></div>
         
         <h2>Configuration</h2>

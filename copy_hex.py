@@ -27,7 +27,7 @@ def copy_hex_with_version(source, target, env):
     hex_source = os.path.join(build_dir, f"{prog_name}.hex")
     
     # Destination hex file with version number
-    hex_dest = os.path.join(env.get("PROJECT_DIR"), f"AiO_New_Dawn_v{version}.hex")
+    hex_dest = os.path.join(env.get("PROJECT_DIR"), f"AiO_v{version}.hex")
     
     # Copy the hex file if it exists
     if os.path.exists(hex_source):

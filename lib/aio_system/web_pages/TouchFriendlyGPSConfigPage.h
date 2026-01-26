@@ -19,7 +19,7 @@ const char TOUCH_FRIENDLY_GPS_CONFIG_PAGE[] PROGMEM = R"rawliteral(
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <title>GPS Configuration - AiO New Dawn</title>
+    <title>GPS Configuration - AiO v26</title>
     <link rel="stylesheet" href="/touch.css">
     <style>
         /* Additional styles specific to GPS config */

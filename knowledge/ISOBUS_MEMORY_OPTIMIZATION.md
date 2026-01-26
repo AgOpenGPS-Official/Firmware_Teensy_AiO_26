@@ -13,7 +13,7 @@
 5. **Need to free**: Additional 23KB minimum
 
 ## Key Discovery: Duplicate FlexCAN
-AgIsoStack includes its own FlexCAN_T4 plugin which duplicates the FlexCAN library already in New Dawn. By creating a custom CAN plugin (`NewDawnCANPlugin`) that uses New Dawn's existing CAN infrastructure, we saved ~8KB of ITCM.
+AgIsoStack includes its own FlexCAN_T4 plugin which duplicates the FlexCAN library already in v26. By creating a custom CAN plugin (`NewDawnCANPlugin`) that uses v26's existing CAN infrastructure, we saved ~8KB of ITCM.
 
 ## Option 1: Move Non-Critical Code to PROGMEM (Recommended)
 
@@ -167,14 +167,14 @@ After extensive optimization attempts:
 
 ## Conclusion
 
-AgIsoStack is too large for New Dawn's current architecture. Even with aggressive optimization, the library requires more ITCM than available when combined with New Dawn's existing features.
+AgIsoStack is too large for v26's current architecture. Even with aggressive optimization, the library requires more ITCM than available when combined with v26's existing features.
 
 ## Recommended Solutions
 
 1. **External ISOBUS Module** (Recommended)
    - Use dedicated ESP32 or STM32F4 for ISOBUS
    - Communicate via CAN bridge or serial protocol
-   - Keeps all New Dawn features intact
+   - Keeps all v26 features intact
    - Example: ESP32 + MCP2515 CAN controller
 
 2. **Dual Firmware Approach**

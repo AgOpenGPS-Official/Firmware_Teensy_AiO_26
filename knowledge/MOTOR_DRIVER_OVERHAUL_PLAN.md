@@ -10,7 +10,7 @@ This plan outlines the phased implementation to support three motor driver types
 - **Danfoss**: Configured via PGN251 Byte 8, uses Output 5 (enable) and Output 6 (analog PWM)
 - **DRV8701P**: Default driver, uses PWM1/PWM2 pins with complementary control
 
-### New Dawn Current State
+### v26 Current State
 - Already has `MotorDriverInterface` abstraction
 - Has `KeyaCANDriver` implementation (partially complete)
 - Has `PWMMotorDriver` for standard PWM control
@@ -78,7 +78,7 @@ Configuration is sent when user updates settings in AOG and stored in EEPROM:
    - Test encoder/speed query functionality
 
 2. Update kickout handling:
-   - Use existing "motor slip" method from New Dawn
+   - Use existing "motor slip" method from v26
    - Remove current sensor query (not required)
    - Remove version query (not required)
 

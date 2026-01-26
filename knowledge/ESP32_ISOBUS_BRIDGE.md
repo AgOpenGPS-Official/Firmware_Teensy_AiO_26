@@ -1,4 +1,4 @@
-# ESP32 ISOBUS VT Bridge for New Dawn
+# ESP32 ISOBUS VT Bridge for v26
 
 ## Overview
 The AiO board includes an ESP32 (XIAO ESP32C3) slot that can be used as a dedicated ISOBUS VT processor, solving the memory constraints of running AgIsoStack on the Teensy 4.1.
@@ -37,7 +37,7 @@ The AiO board includes an ESP32 (XIAO ESP32C3) slot that can be used as a dedica
 5. Bridge VT data to/from Teensy via serial
 
 ### Teensy Responsibilities  
-1. Continue all existing New Dawn functions
+1. Continue all existing v26 functions
 2. Send relevant data to ESP32 for VT display
 3. Receive VT input events from ESP32
 4. Maintain primary control of machine
@@ -107,7 +107,7 @@ Since ESP32 doesn't have built-in CAN, options include:
 4. Test communication reliability
 
 ### Phase 3: VT Integration
-1. Design VT screens for New Dawn data
+1. Design VT screens for v26 data
 2. Map Teensy data to VT objects
 3. Handle VT input events
 4. Create status display on main screen

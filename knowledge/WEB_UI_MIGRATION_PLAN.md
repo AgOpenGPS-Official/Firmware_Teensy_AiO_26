@@ -92,7 +92,7 @@ This plan outlines the migration from Mongoose web framework to a basic web stac
    <html>
    <head>
      <meta name="viewport" content="width=device-width, initial-scale=1">
-     <title>AiO New Dawn</title>
+     <title>AiO v26</title>
      <link rel="stylesheet" href="/style.css">
    </head>
    <body>

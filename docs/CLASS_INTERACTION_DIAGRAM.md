@@ -1,7 +1,7 @@
-# AiO New Dawn Class Interaction Diagram
+# AiO v26 Class Interaction Diagram
 
 ## Overview
-This diagram shows the major class relationships in the AiO New Dawn firmware architecture.
+This diagram shows the major class relationships in the AiO v26 firmware architecture.
 
 ```mermaid
 graph TB

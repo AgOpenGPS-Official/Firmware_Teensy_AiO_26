@@ -19,7 +19,7 @@ const char TOUCH_FRIENDLY_LOG_VIEWER_PAGE[] PROGMEM = R"rawliteral(
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <title>Log Viewer - AiO New Dawn</title>
+    <title>Log Viewer - AiO v26</title>
     <link rel="stylesheet" href="/touch.css">
     <style>
         /* Log viewer specific styles */

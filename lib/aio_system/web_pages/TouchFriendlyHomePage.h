@@ -19,12 +19,12 @@ const char TOUCH_FRIENDLY_HOME_PAGE[] PROGMEM = R"rawliteral(
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <title>AiO New Dawn</title>
+    <title>AiO v26</title>
     <link rel="stylesheet" href="/touch.css">
 </head>
 <body>
     <div class="container">
-        <h1>AgOpenGPS AiO New Dawn</h1>
+        <h1>AgOpenGPS AiO v26</h1>
         
         <h2>Configuration</h2>
         <nav class="nav-menu">

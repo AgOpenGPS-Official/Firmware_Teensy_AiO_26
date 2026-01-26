@@ -17,7 +17,7 @@ const char SIMPLE_DEVICE_SETTINGS_NO_REPLACE[] PROGMEM = R"rawliteral(
 <html>
 <head>
     <meta name='viewport' content='width=device-width, initial-scale=1'>
-    <title>Device Settings - AiO New Dawn</title>
+    <title>Device Settings - AiO v26</title>
     <style>
         body {
             font-family: Arial, sans-serif;

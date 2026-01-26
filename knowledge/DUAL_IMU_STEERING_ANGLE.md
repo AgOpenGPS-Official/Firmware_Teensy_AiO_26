@@ -332,7 +332,7 @@ void checkForRecalibrationOpportunity() {
 }
 ```
 
-### Integration with AiO New Dawn
+### Integration with AiO v26
 
 The dual IMU system could integrate as an alternative to traditional WAS:
 
@@ -434,7 +434,7 @@ Use ML to learn:
 - Complementary Filtering
 - Vehicle Dynamics and Kinematics
 
-### Related AiO New Dawn Documentation
+### Related AiO v26 Documentation
 - `WHEEL_ANGLE_FUSION_KALMAN.md` - Single IMU VWAS implementation
 - `IMU_INTEGRATION.md` - IMU processor architecture
 - `SENSOR_FUSION.md` - General sensor fusion approaches
@@ -455,10 +455,10 @@ The dual IMU approach to steering angle measurement is **technically viable** an
 - ✅ Backup/redundant steering angle measurement
 - ❓ Primary steering sensor (needs extensive testing)
 
-This concept is saved for potential future implementation in AiO New Dawn.
+This concept is saved for potential future implementation in AiO v26.
 
 ---
 
 *Document created: 2025-11-03*
-*For: AiO New Dawn Agricultural Control System*
+*For: AiO v26 Agricultural Control System*
 *Status: Concept - Not Implemented*
