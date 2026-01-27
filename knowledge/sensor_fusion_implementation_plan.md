@@ -217,46 +217,124 @@ This plan breaks down the sensor fusion implementation into small, testable incr
 ### Step 3.3: Dead Reckoning System
 **Goal**: Maintain operation during GPS outages
 
-1. Implement `DeadReckoningSystem` class
+**Key insight from GPS-IMU fusion research**: Use the Kalman filter's process model (equation 1: `xt = f(xt-1, ut-1) + wt-1`) to propagate state during GPS outages, with covariance growth naturally tracking confidence degradation.
+
+1. Implement process model for prediction-only mode
+   - State vector: `[θ, θ_dot, drift_rate]` (angle, angular rate, learned drift)
+   - Process model:
+     ```
+     θ_new = θ_old + encoder_delta × scale + drift_rate × dt
+     θ_dot_new = encoder_delta / dt
+     drift_rate_new = drift_rate_old  // constant during outage
+     ```
+   - Covariance propagation: `P_new = F × P_old × F' + Q`
+   - Q (process noise) grows uncertainty each prediction step
+   - No arbitrary time thresholds—covariance tells us confidence
+
+2. Implement `DeadReckoningSystem` class
    - Operation mode state machine (FULL_FUSION, IMU_AIDED, ENCODER_ONLY, COAST_MODE)
-   - Drift accumulation tracking
-   - Confidence level calculation
-   - GPS outage timer
+   - Mode transitions based on covariance thresholds, not timers:
+     - `P < P_good`: FULL_FUSION (normal operation)
+     - `P < P_degraded`: IMU_AIDED (no GPS, but acceptable)
+     - `P < P_warning`: ENCODER_ONLY (warn operator)
+     - `P >= P_critical`: COAST_MODE (recommend manual)
+   - Suggested thresholds: P_good=1°², P_degraded=4°², P_warning=9°², P_critical=25°²
+   - GPS outage timer for logging/diagnostics only
 
-2. Add graceful degradation logic
-   - 0-30 seconds: Continue with increased uncertainty
-   - 30 seconds-5 minutes: Reduce gains, warn operator
-   - >5 minutes: Safe mode, recommend manual control
+3. IMU cross-validation during dead reckoning
+   - Compare encoder-derived angular rate to IMU yaw rate:
+     ```
+     encoder_rate = encoder_delta × scale / dt
+     imu_rate = yaw_rate × wheelbase / speed  // Ackermann conversion
+     rate_error = |encoder_rate - imu_rate|
+     ```
+   - If `rate_error > threshold` for sustained period:
+     - Possible encoder slip, valve lag, or intervention
+     - Increase Q temporarily (faster covariance growth)
+     - Flag for virtual turn sensor
+   - If rates agree well, encoder is trustworthy
 
-3. Implement sensor fallback hierarchy
-   - Primary: GPS + IMU + Encoder
-   - Fallback 1: IMU + Encoder
-   - Fallback 2: Encoder only
+4. Adaptive process noise Q
+   - Base Q from learned drift variance during GPS-available periods
+   - Increase Q based on operating conditions:
+     - `Q_adjusted = Q_base × speed_factor × roughness_factor × temp_factor`
+     - Speed factor: higher speed = faster angle changes = more uncertainty
+     - Roughness factor: from IMU accelerometer variance (bumpy field)
+     - Temperature factor: hydraulic viscosity changes affect response
+   - This makes covariance growth realistic, not pessimistic
+
+5. Implement sensor fallback hierarchy
+   - Primary: GPS + IMU + Encoder (full measurement update)
+   - Fallback 1: IMU + Encoder (IMU provides partial observability)
+     - Use IMU yaw rate as weak measurement: `z_imu = yaw_rate × wheelbase / speed`
+     - Higher R (less trust) than GPS-derived angle
+   - Fallback 2: Encoder only (prediction only, no measurement update)
+     - Covariance grows unbounded
    - Emergency: Coast on last known angle
+     - If encoder also fails, hold last angle
+     - Maximum covariance, strong warnings
 
-**Test**: Disable GPS at various durations, verify smooth degradation
-**Commit**: "feat: add dead reckoning for GPS outages"
+6. Bounded covariance with physical constraints
+   - Cap P at physical maximum: wheel can't be more than ±45° uncertain
+   - `P_max = (45°)² = 2025°²`
+   - Apply angle constraints in prediction: clamp θ to [-45°, +45°]
+   - Prevents filter divergence during extended outages
+
+**Test**:
+- Disable GPS at various durations, verify smooth degradation
+- Monitor covariance growth rate, verify matches expected drift
+- Test IMU cross-validation with simulated encoder errors
+- Verify mode transitions occur at appropriate uncertainty levels
+
+**Commit**: "feat: add dead reckoning with covariance-based degradation"
 
 ### Step 3.4: GPS Reacquisition
 **Goal**: Smooth recovery when GPS returns
 
-1. Implement reacquisition handler
-   - Gradual trust rebuilding (5-second blend period)
-   - Drift estimation and correction
-   - Kalman filter reinitialization with high uncertainty
+**Key insight from GPS-IMU fusion research**: Rather than fixed blend periods, use the Kalman filter's natural covariance mechanics for mathematically optimal reacquisition.
 
-2. Add drift learning
+1. Implement innovation-based validation
+   - Calculate innovation: `v = z_gps - z_predicted` (difference between GPS measurement and encoder prediction)
+   - Compute normalized innovation squared (NIS): `NIS = v² / (P + R)`
+   - Apply chi-squared gating: reject measurement if `NIS > threshold` (typically 5.99 for 95% confidence, 1 DOF)
+   - This detects GPS jumps vs legitimate position changes
+   - Log rejected measurements for diagnostics
+
+2. Covariance-driven trust rebuilding (replaces fixed 5-second blend)
+   - On GPS return, DON'T reinitialize filter state
+   - Instead, inflate state covariance P based on outage duration:
+     - `P_inflated = P_current + (drift_rate² × outage_time²)`
+   - Let Kalman gain naturally increase due to high P
+   - Trust rebuilds organically as measurements reduce P
+   - Typical convergence: 2-10 updates depending on drift accumulated
+
+3. Sequential measurement acceptance
+   - First GPS fix after outage: apply extra-conservative gating (NIS < 3.0)
+   - If rejected, wait for next fix rather than forcing acceptance
+   - After 3 consecutive accepted fixes, return to normal gating
+   - Prevents single bad fix from corrupting state
+
+4. Add drift learning
    - Track drift patterns during outages
-   - Update drift models based on recovery data
-   - Temperature and time correlations
+   - On reacquisition, compute actual drift: `drift = z_gps - z_predicted`
+   - Update drift model: `drift_rate = α × (drift / outage_time) + (1-α) × drift_rate_old`
+   - Use exponential smoothing (α ≈ 0.1) for gradual adaptation
+   - Correlate with temperature, load, and outage duration
+   - Store learned drift rates for predictive compensation
 
-3. Add operator notifications
+5. Add operator notifications
    - GPS lost warning (after 30 seconds)
-   - Degraded mode indication
+   - Degraded mode indication with confidence percentage
    - GPS recovered confirmation
+   - "Stabilizing..." indicator during covariance convergence
 
-**Test**: Cycle GPS on/off, verify smooth transitions
-**Commit**: "feat: add GPS reacquisition and drift learning"
+**Test**:
+- Cycle GPS on/off, verify smooth transitions
+- Inject simulated GPS jumps, verify rejection
+- Measure convergence time vs outage duration
+- Verify drift model improves over multiple outages
+
+**Commit**: "feat: add GPS reacquisition with innovation gating"
 
 ### Step 3.5: Drift Compensation
 **Goal**: Minimize error accumulation during dead reckoning
@@ -431,74 +509,113 @@ This plan breaks down the sensor fusion implementation into small, testable incr
 2. **Action**: Disable GPS for 20 seconds
 3. **Expected**:
    - Steering continues normally
+   - Mode remains IMU_AIDED (P < P_degraded = 4°²)
    - No operator warning
    - Accuracy within ±1°
 4. **Recovery**: Re-enable GPS
-5. **Verify**: Smooth transition back to full fusion
+5. **Verify**:
+   - Innovation gating accepts first fix (NIS < 5.99)
+   - Covariance drops back to P_good within 3-5 updates
+   - Smooth transition back to full fusion
 
 #### Test 2: Extended GPS Outage (1-2 minutes)
 1. **Setup**: Straight line operation
 2. **Action**: Disable GPS for 90 seconds
 3. **Expected**:
-   - Warning after 30 seconds
-   - Reduced steering gains
+   - Mode transitions: FULL_FUSION → IMU_AIDED → ENCODER_ONLY
+   - Warning when P exceeds P_warning (9°²)
+   - Covariance grows predictably per process noise Q
    - Accuracy within ±3°
 4. **Recovery**: Re-enable GPS
-5. **Verify**: Drift correction applied, returns to normal within 10 seconds
+5. **Verify**:
+   - First GPS fix may be rejected if drift was large (NIS > threshold)
+   - Drift correction applied over 3-5 accepted measurements
+   - Covariance converges, not instant reset
 
 #### Test 3: GPS Cycling (Intermittent Loss)
 1. **Setup**: Normal operation
 2. **Action**: Cycle GPS on/off every 15 seconds for 5 minutes
 3. **Expected**:
-   - System adapts to intermittent availability
-   - No oscillation or instability
-   - Maintains general heading
-4. **Verify**: Drift models update appropriately
+   - Covariance oscillates but stays bounded
+   - No mode oscillation (hysteresis prevents rapid switching)
+   - Innovation gating prevents bad fix acceptance
+   - Drift model updates with each reacquisition
+4. **Verify**:
+   - Drift rate estimate converges to true value
+   - System stability improves as drift model learns
 
-#### Test 4: IMU Failure During GPS Outage
+#### Test 4: IMU Cross-Validation
+1. **Setup**: Normal operation with GPS disabled
+2. **Action**: Introduce encoder error (e.g., slip, miscalibration)
+3. **Expected**:
+   - IMU yaw rate disagrees with encoder-derived rate
+   - `rate_error = |encoder_rate - imu_rate|` exceeds threshold
+   - Process noise Q increases (faster covariance growth)
+   - Virtual turn sensor flag raised
+4. **Verify**: System detects inconsistency, doesn't blindly trust encoder
+
+#### Test 5: IMU Failure During GPS Outage
 1. **Setup**: Disable GPS
 2. **Action**: Disable IMU after 10 seconds
 3. **Expected**:
-   - Fallback to encoder-only mode
+   - Mode transition: IMU_AIDED → ENCODER_ONLY
+   - Covariance growth rate increases (lost cross-validation)
    - Additional warning to operator
    - Degraded but functional steering
 4. **Recovery**: Re-enable both sensors
-5. **Verify**: Proper sensor priority restoration
+5. **Verify**:
+   - IMU cross-validation resumes
+   - Proper sensor priority restoration
+   - Covariance converges faster with IMU available
 
-#### Test 5: Complete Sensor Loss
+#### Test 6: Complete Sensor Loss
 1. **Setup**: Normal operation
 2. **Action**: Disable all sensors sequentially
 3. **Expected**:
-   - Coast mode activation
+   - Mode transitions: FULL → IMU_AIDED → ENCODER_ONLY → COAST_MODE
+   - Covariance hits P_critical (25°²) then P_max (2025°²)
    - Strong warning to operator
-   - Maintains last known angle
+   - Maintains last known angle (clamped to ±45°)
    - Suggests manual control
 4. **Recovery**: Re-enable sensors
-5. **Verify**: System recovers gracefully
+5. **Verify**: System recovers gracefully with high initial uncertainty
 
-#### Test 6: Real-World Scenarios
+#### Test 7: Innovation Gating Validation
+1. **Setup**: Normal operation
+2. **Action**: Inject simulated GPS jump (sudden 10° offset)
+3. **Expected**:
+   - Innovation `v = z_gps - z_predicted` is large (~10°)
+   - NIS = v² / (P + R) exceeds threshold
+   - Measurement rejected, state unchanged
+   - Log shows "GPS measurement rejected: NIS=XX.X"
+4. **Verify**: Bad GPS fix doesn't corrupt filter state
+
+#### Test 8: Real-World Scenarios
 1. **Tree Line Navigation**:
    - Drive along tree lines with intermittent GPS
-   - Verify smooth operation transitions
-   - Monitor drift accumulation
+   - Monitor covariance and mode transitions
+   - Verify innovation gating handles multipath
 
 2. **Building/Structure Passage**:
    - Drive through barn or under structure
    - Test 30-60 second GPS loss
-   - Verify steering stability
+   - Verify covariance-based warnings appropriate
 
 3. **Valley Operations**:
    - Test in areas with poor GPS coverage
-   - Extended degraded operation
-   - Operator notification effectiveness
+   - Monitor drift model learning over multiple passes
+   - Verify adaptive Q responds to terrain roughness
 
 #### Performance Metrics to Track:
+- **Covariance growth rate** (°²/second) vs predicted Q
+- **Innovation statistics**: mean, variance, NIS distribution
+- **Drift rate estimate** accuracy (compare to actual on reacquisition)
+- **Mode transition thresholds**: verify P-based triggers work
+- **GPS rejection rate**: should be low (<5%) in good conditions
+- **Recovery convergence time**: updates to reach P_good
+- **IMU cross-validation error rate**: false positive/negative rates
+- **CPU usage during dead reckoning**
 - Maximum drift rate (degrees/minute)
-- Time to operator warning
-- Recovery time after GPS return
-- Steering oscillation during transitions
-- CPU usage during dead reckoning
-- Confidence level accuracy
 
 ## Risk Mitigation
 
@@ -528,13 +645,24 @@ This plan breaks down the sensor fusion implementation into small, testable incr
 - Web-based calibration wizard functional
 
 ### Phase 3 Complete:
-- Adapts to GPS quality changes
-- Maintains accuracy during GPS degradation
-- Dead reckoning operational for 0-5 minute GPS outages
-- Smooth GPS reacquisition with drift correction
-- Operator warnings at appropriate thresholds
-- Drift rate <2°/minute during dead reckoning
-- No manual tuning required
+- Adapts to GPS quality changes via adaptive R calculation
+- Covariance-based mode transitions working (FULL_FUSION → IMU_AIDED → ENCODER_ONLY → COAST)
+- Dead reckoning operational for 0-5 minute GPS outages:
+  - 30-second outage: P stays below P_degraded (4°²), accuracy ±1°
+  - 90-second outage: P reaches P_warning (9°²), accuracy ±3°
+  - 5-minute outage: controlled degradation, accuracy ±5°
+- Innovation gating operational:
+  - GPS jump rejection working (NIS threshold = 5.99)
+  - GPS rejection rate <5% in good conditions
+  - No state corruption from multipath or reacquisition errors
+- IMU cross-validation detecting encoder inconsistencies
+- Smooth GPS reacquisition:
+  - Covariance-driven trust rebuilding (no fixed blend time)
+  - Recovery to P_good within 5-10 measurements
+  - Drift learning improving over multiple outage cycles
+- Drift rate <2°/minute during dead reckoning (matches Q prediction)
+- Operator warnings triggered by covariance thresholds, not timers
+- No manual tuning required—filter self-calibrates
 
 ### Phase 4 Complete:
 - Supports 3+ sensor configurations
