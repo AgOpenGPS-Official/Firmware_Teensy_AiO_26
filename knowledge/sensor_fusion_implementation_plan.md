@@ -56,19 +56,70 @@ This plan breaks down the sensor fusion implementation into small, testable incr
 ### Step 1.4: GPS Angle Calculation
 **Goal**: Calculate steering angle from GPS/INS data
 
-1. Add GPS angle calculation
+**Critical Issue - Antenna Lateral Displacement on Sidehills**:
+When vehicle rolls on a sidehill, the GPS antenna (mounted high on cab) moves laterally:
+```
+lateral_offset = antenna_height × sin(roll)
+```
+Example: 2m antenna height, 15° roll → 0.52m lateral displacement
+
+This corrupts GPS heading rate and must be compensated before wheel angle calculation.
+
+1. Add antenna height compensation
+   - Add `antennaHeight` to vehicle configuration (default 2.0m)
+   - Get roll angle from IMU (preferred) or dual-GPS
+   - Calculate lateral velocity component from roll:
+     ```
+     // Antenna lateral velocity due to roll rate
+     v_lateral_roll = antenna_height × cos(roll) × roll_rate
+
+     // Correct GPS velocity before heading calculation
+     v_north_corrected = v_north - v_lateral_roll × sin(heading)
+     v_east_corrected = v_east - v_lateral_roll × cos(heading)
+     ```
+   - For steady-state roll (constant sidehill), the effect is on position not velocity
+   - For dynamic roll (entering/exiting sidehill), velocity correction is critical
+
+2. Add GPS angle calculation with roll compensation
    - Get heading rate from NAVProcessor
+   - Apply antenna displacement correction to heading rate:
+     ```
+     // Raw heading rate includes antenna swing component
+     heading_rate_raw = atan2(v_east, v_north) derivative
+
+     // Antenna swing rate due to roll change
+     antenna_swing_rate = (antenna_height / speed) × roll_rate × cos(roll)
+
+     // Corrected heading rate
+     heading_rate = heading_rate_raw - antenna_swing_rate
+     ```
    - Get vehicle speed from NAVProcessor
-   - Calculate wheel angle using Ackermann geometry
+   - Calculate wheel angle using Ackermann geometry:
+     ```
+     wheel_angle = atan(wheelbase × heading_rate / speed)
+     ```
    - Add wheelbase to configuration
-   
-2. Add sanity checks
-   - Minimum speed threshold
-   - Maximum angle limits
+
+3. Add roll-dependent measurement noise
+   - Increase GPS measurement noise R when roll is significant:
+     ```
+     R_adjusted = R_base × (1 + k × |roll|)
+     ```
+   - Higher roll = more antenna displacement uncertainty
+   - Helps Kalman filter weight encoder more on sidehills
+
+4. Add sanity checks
+   - Minimum speed threshold (>0.5 m/s for reliable heading)
+   - Maximum angle limits (±45°)
+   - Roll rate limit check (reject during rapid roll changes)
    - Invalid data detection
-   
-**Test**: Log calculated GPS angles at various speeds
-**Commit**: "feat: add GPS-derived wheel angle calculation"
+
+**Test**:
+- Log calculated GPS angles at various speeds
+- Test on sidehill: compare corrected vs uncorrected angles
+- Verify roll compensation reduces cross-track error on slopes
+
+**Commit**: "feat: add GPS-derived wheel angle with roll compensation"
 
 ### Step 1.5: Connect to AutosteerProcessor
 **Goal**: Use fusion output for steering control
@@ -361,20 +412,63 @@ This plan breaks down the sensor fusion implementation into small, testable incr
 ## Phase 4: Enhanced Features (Week 7-8)
 
 ### Step 4.1: Multi-Sensor Support
-**Goal**: Support different sensor combinations
+**Goal**: Support different sensor combinations with robust roll compensation
 
-1. Add IMU heading rate option
-   - Get rotation rate from IMU
-   - Switch between GPS and IMU sources
-   - Automatic source selection
+**Key challenge**: GPS antenna mounted high on cab rocks ±0.5m laterally on sidehills. IMU provides essential roll data for compensation.
 
-2. Add sensor priority system
-   - Define sensor hierarchy
-   - Automatic failover
-   - Health monitoring
+1. Roll source priority system
+   - Priority 1: IMU roll (BNO085/TM171) - fastest, most reliable
+   - Priority 2: Dual-GPS roll (from RELPOSNED or KSXT pitch field)
+   - Priority 3: INS roll (from INSPVAXA if available)
+   - Automatic failover between sources
+   - Roll source health monitoring (staleness, variance)
 
-**Test**: Disable various sensors, verify failover
-**Commit**: "feat: add multi-sensor support"
+2. Add IMU heading rate option
+   - Get yaw rate from IMU gyroscope
+   - Advantage: Not affected by antenna displacement
+   - Use when GPS heading rate is unreliable (low speed, high roll rate)
+   - Cross-validate with GPS-derived heading rate when both available:
+     ```
+     // IMU yaw rate is clean (body-fixed)
+     // GPS heading rate includes antenna motion artifacts
+     // Agreement indicates good GPS conditions
+     rate_agreement = |imu_yaw_rate - gps_heading_rate_corrected|
+     ```
+
+3. Sidehill-specific fusion weights
+   - Detect sidehill operation: `|roll| > 5°`
+   - On sidehill, increase trust in IMU yaw rate vs GPS heading rate:
+     ```
+     R_gps_heading = R_base × (1 + k_sidehill × |roll|)
+     ```
+   - IMU gyro not affected by antenna position, so more reliable
+   - Log sidehill operation statistics for tuning
+
+4. Roll rate limiting for GPS corrections
+   - During rapid roll changes (entering/exiting sidehill):
+     ```
+     if |roll_rate| > threshold:  // e.g., 5°/second
+         // Antenna is swinging, GPS heading unreliable
+         // Rely more on IMU and encoder
+         R_gps = R_gps × 5  // Temporarily distrust GPS
+     ```
+   - Resume normal GPS trust when roll stabilizes
+
+5. Add sensor priority system
+   - Define sensor hierarchy per measurement type:
+     - Roll: IMU > Dual-GPS > INS
+     - Heading rate: IMU (sidehill) / GPS (flat) > encoder-derived
+     - Speed: GPS > wheel speed sensor
+   - Automatic failover with covariance adjustment
+   - Health monitoring and staleness detection
+
+**Test**:
+- Disable various sensors, verify failover
+- Test on 15° sidehill: verify roll compensation reduces error
+- Compare GPS-only vs IMU-aided heading on sidehills
+- Verify rapid roll transitions handled correctly
+
+**Commit**: "feat: add multi-sensor support with roll compensation"
 
 ### Step 4.2: Enhanced Virtual Turn Sensor
 **Goal**: Improve intervention detection with advanced algorithms
@@ -665,9 +759,15 @@ This plan breaks down the sensor fusion implementation into small, testable incr
 - No manual tuning required—filter self-calibrates
 
 ### Phase 4 Complete:
-- Supports 3+ sensor configurations
+- Supports 3+ sensor configurations with automatic failover
+- Roll compensation operational:
+  - Sidehill accuracy within ±1° (same as flat ground)
+  - Antenna displacement correction working (tested at 15° roll)
+  - Roll source failover: IMU → Dual-GPS → INS
+  - Rapid roll transitions handled without GPS corruption
+- IMU yaw rate integration reducing GPS dependency on sidehills
 - Comprehensive diagnostics available
-- Field-tested in various conditions
+- Field-tested in various conditions including sidehills
 
 ### Phase 5 Complete:
 - Meets all performance targets
