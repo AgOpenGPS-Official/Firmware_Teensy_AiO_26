@@ -53,22 +53,246 @@ This plan breaks down the sensor fusion implementation into small, testable incr
 **Test**: Feed known encoder values, verify output changes
 **Commit**: "feat: implement basic Kalman filter algorithm"
 
+### Step 1.3a: Tilt-Compensated Position (PREREQUISITE)
+**Goal**: Transform GPS antenna position to ground-level vehicle position
+
+**Why this matters**: GPS reports antenna position, but we need ground-level position. On a 15° sidehill with 2m antenna height, the antenna is 0.52m laterally offset from where the wheels actually are. Without compensation, ALL downstream calculations (heading, heading rate, wheel angle) inherit this error.
+
+```
+        GPS Antenna ●───────┐
+                    │       │ lateral_error = h × sin(roll)
+                    │       │ = 2m × sin(15°) = 0.52m
+                    │       ▼
+    ════════════════●═══════════════  Actual ground position
+                Vehicle centerline
+```
+
+**Dependency chain**:
+```
+Good tilt readings → Tilt-compensated position → Accurate heading → Correct wheel angle
+       ▲
+       │
+    THIS STEP
+```
+
+**GPS receiver categories for tilt compensation**:
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│ Receiver Type        │ Internal IMU? │ Tilt Problem?  │ Solution        │
+├──────────────────────────────────────────────────────────────────────────┤
+│ UM981/UM982 (INS)    │ YES           │ SOLVED         │ Uses internal   │
+│                      │               │                │ fusion, delivers│
+│                      │               │                │ corrected pos   │
+├──────────────────────────────────────────────────────────────────────────┤
+│ F9P dual + ext IMU   │ External      │ WE SOLVE IT    │ Use BNO085/TM171│
+│                      │ (BNO/TM171)   │                │ for correction  │
+├──────────────────────────────────────────────────────────────────────────┤
+│ F9P dual, no IMU     │ NO            │ CHICKEN & EGG  │ Limited - see   │
+│ (RELPOSNED/KSXT)     │               │                │ mitigations     │
+├──────────────────────────────────────────────────────────────────────────┤
+│ Single GPS + ext IMU │ External      │ WE SOLVE IT    │ Correct position│
+├──────────────────────────────────────────────────────────────────────────┤
+│ Single GPS, no IMU   │ NO            │ UNSOLVABLE     │ Cannot correct  │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+**Chicken-and-egg problem applies to: F9P dual-antenna WITHOUT external IMU**
+- Roll from dual-GPS geometry is valid, but:
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ Problem                      │ With IMU        │ Dual-GPS Only │
+├─────────────────────────────────────────────────────────────────┤
+│ Update rate                  │ 100Hz           │ 5-10Hz        │
+│ Startup (before convergence) │ IMU ready in 1s │ 30s+ wait     │
+│ GPS blockage (trees/building)│ IMU continues   │ Both fail     │
+│ Roll/position synchronization│ Independent     │ Same source   │
+│ Latency                      │ <10ms           │ 50-200ms      │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+Mitigations for dual-GPS-only systems (F9P without external IMU):
+- **Startup**: Don't apply position correction until dual-GPS converged (heading quality > threshold)
+- **Synchronization**: Use roll from SAME message as position (KSXT includes both)
+- **Blockage**: Fall back to last known roll with increasing uncertainty, or disable correction
+- **Between updates**: Hold previous roll (acceptable at 10Hz, problematic at 5Hz on rough terrain)
+- **Recommendation**: Add external IMU (BNO085 ~$15) or upgrade to UM981
+
+**UM981/UM982 is the best solution**: Internal IMU handles tilt compensation automatically, delivers corrected position via INSPVAXA, no chicken-and-egg problem.
+
+1. Implement tilt source manager
+   - Priority 1: UM981/UM982 INS (position already corrected, just use roll for display)
+   - Priority 2: External IMU roll/pitch (BNO085/TM171) - 100Hz, fast response
+   - Priority 3: Dual-GPS roll (from RELPOSNED or KSXT) - 5-10Hz, limited
+   - Automatic failover with quality tracking
+   - **Flag when operating in dual-GPS-only mode** (warn user, recommend IMU)
+   - Output: `getTiltData()` returns roll, pitch, source, quality, timestamp
+
+2. Add tilt calibration
+   - Store roll/pitch zero offsets in EEPROM (existing `insRollOffset`, `insPitchOffset`)
+   - Add web UI calibration: "Park on level ground, click Calibrate"
+   - Apply offsets before any calculations:
+     ```
+     roll_corrected = roll_raw - rollOffset
+     pitch_corrected = pitch_raw - pitchOffset
+     ```
+
+3. Add tilt filtering
+   - Low-pass filter for noise reduction (cutoff ~2Hz for roll, ~1Hz for pitch)
+   - Reject outliers (|roll| > 45°, |pitch| > 30°)
+   - Track tilt rate for dynamic detection:
+     ```
+     roll_rate = (roll_current - roll_previous) / dt
+     if |roll_rate| > 20°/s: flag as dynamic
+     ```
+
+4. Implement position compensation in NAVProcessor
+   - Add `antennaHeight` to ConfigManager (default 2.0m)
+
+   **CRITICAL: Know your position source!**
+   ```
+   ┌────────────────────────────────────────────────────────────────────┐
+   │ Source          │ Has internal IMU? │ Position tilt-compensated?  │
+   ├────────────────────────────────────────────────────────────────────┤
+   │ UM981 INSPVAXA  │ YES (onboard)     │ YES - DO NOT double-correct │
+   │ UM982 INSPVAXA  │ YES (onboard)     │ YES - DO NOT double-correct │
+   │ F9P RELPOSNED   │ NO                │ NO - we must correct        │
+   │ Dual-GPS KSXT   │ NO                │ NO - we must correct        │
+   │ Single GPS+IMU  │ External BNO/TM   │ NO - we must correct        │
+   │ Single GPS only │ NO                │ NO - cannot correct (no roll)│
+   └────────────────────────────────────────────────────────────────────┘
+   ```
+
+   - **For UM981/UM982 (INSPVAXA with INS):**
+     - Position is ALREADY tilt-compensated by internal IMU fusion
+     - Pass through position unchanged
+     - Use roll/pitch from INSPVAXA for display and heading rate compensation
+     - Set `position_compensated = true`
+
+   - **For dual-GPS without internal IMU (F9P RELPOSNED, KSXT):**
+     - Position is raw antenna position - NOT compensated
+     - Use roll from SAME message as position (synchronized)
+     - Apply our tilt correction
+     - KSXT: roll is in pitch field (heading/pitch/roll naming is confusing)
+
+   - **For single GPS + external IMU (BNO085/TM171):**
+     - Position is raw antenna position - NOT compensated
+     - Interpolate IMU roll to GPS timestamp (100Hz → 10Hz)
+     - Apply our tilt correction
+
+   - **For single GPS without IMU:**
+     - Cannot correct - no roll source
+     - Flag as degraded, warn user
+
+   - Apply tilt correction (when needed):
+     ```
+     // Skip if source already compensated (UM981/UM982 INS)
+     if (gnssData.hasINS && gnssData.insStatus >= INS_ALIGNED) {
+         // Position already tilt-compensated by UM98x internal IMU
+         lat_corrected = lat;
+         lon_corrected = lon;
+         position_compensated = true;
+     }
+     else if (tilt_quality >= MINIMUM_QUALITY && tilt_age_ms < 200) {
+         // Apply our correction
+         east_correction = antenna_height × sin(roll)
+         north_correction = antenna_height × sin(pitch) × cos(roll)
+
+         lat_corrected = lat + north_correction / meters_per_degree_lat
+         lon_corrected = lon - east_correction / meters_per_degree_lon
+         position_compensated = true;
+     } else {
+         // No correction possible
+         lat_corrected = lat
+         lon_corrected = lon
+         position_compensated = false;
+         set_degraded_flag()
+     }
+     ```
+   - Send corrected position in PAOGI message
+   - Keep roll/pitch fields for AgOpenGPS display
+   - **Add flag indicating whether position is tilt-compensated**
+
+5. Add tilt data quality indicators
+   - Tilt source in use (IMU/Dual-GPS/INS)
+   - Tilt data age (staleness detection)
+   - Tilt variance (noise level)
+   - Dynamic flag (rapid tilt changes)
+
+**Test**:
+- Calibrate on level ground, verify zero offsets stored
+- Tilt vehicle manually, verify roll/pitch values correct
+- Park on known slope, verify position correction magnitude
+- Compare PAOGI lat/lon with and without correction on sidehill
+
+**Commit**: "feat: add tilt-compensated position calculation"
+
 ### Step 1.4: GPS Angle Calculation
 **Goal**: Calculate steering angle from GPS/INS data
 
-1. Add GPS angle calculation
+**Critical Issue - Antenna Lateral Displacement on Sidehills**:
+When vehicle rolls on a sidehill, the GPS antenna (mounted high on cab) moves laterally:
+```
+lateral_offset = antenna_height × sin(roll)
+```
+Example: 2m antenna height, 15° roll → 0.52m lateral displacement
+
+This corrupts GPS heading rate and must be compensated before wheel angle calculation.
+
+1. Add antenna height compensation
+   - Add `antennaHeight` to vehicle configuration (default 2.0m)
+   - Get roll angle from IMU (preferred) or dual-GPS
+   - Calculate lateral velocity component from roll:
+     ```
+     // Antenna lateral velocity due to roll rate
+     v_lateral_roll = antenna_height × cos(roll) × roll_rate
+
+     // Correct GPS velocity before heading calculation
+     v_north_corrected = v_north - v_lateral_roll × sin(heading)
+     v_east_corrected = v_east - v_lateral_roll × cos(heading)
+     ```
+   - For steady-state roll (constant sidehill), the effect is on position not velocity
+   - For dynamic roll (entering/exiting sidehill), velocity correction is critical
+
+2. Add GPS angle calculation with roll compensation
    - Get heading rate from NAVProcessor
+   - Apply antenna displacement correction to heading rate:
+     ```
+     // Raw heading rate includes antenna swing component
+     heading_rate_raw = atan2(v_east, v_north) derivative
+
+     // Antenna swing rate due to roll change
+     antenna_swing_rate = (antenna_height / speed) × roll_rate × cos(roll)
+
+     // Corrected heading rate
+     heading_rate = heading_rate_raw - antenna_swing_rate
+     ```
    - Get vehicle speed from NAVProcessor
-   - Calculate wheel angle using Ackermann geometry
+   - Calculate wheel angle using Ackermann geometry:
+     ```
+     wheel_angle = atan(wheelbase × heading_rate / speed)
+     ```
    - Add wheelbase to configuration
-   
-2. Add sanity checks
-   - Minimum speed threshold
-   - Maximum angle limits
+
+3. Add roll-dependent measurement noise
+   - Increase GPS measurement noise R when roll is significant:
+     ```
+     R_adjusted = R_base × (1 + k × |roll|)
+     ```
+   - Higher roll = more antenna displacement uncertainty
+   - Helps Kalman filter weight encoder more on sidehills
+
+4. Add sanity checks
+   - Minimum speed threshold (>0.5 m/s for reliable heading)
+   - Maximum angle limits (±45°)
+   - Roll rate limit check (reject during rapid roll changes)
    - Invalid data detection
-   
-**Test**: Log calculated GPS angles at various speeds
-**Commit**: "feat: add GPS-derived wheel angle calculation"
+
+**Test**:
+- Log calculated GPS angles at various speeds
+- Test on sidehill: compare corrected vs uncorrected angles
+- Verify roll compensation reduces cross-track error on slopes
+
+**Commit**: "feat: add GPS-derived wheel angle with roll compensation"
 
 ### Step 1.5: Connect to AutosteerProcessor
 **Goal**: Use fusion output for steering control
@@ -217,46 +441,124 @@ This plan breaks down the sensor fusion implementation into small, testable incr
 ### Step 3.3: Dead Reckoning System
 **Goal**: Maintain operation during GPS outages
 
-1. Implement `DeadReckoningSystem` class
+**Key insight from GPS-IMU fusion research**: Use the Kalman filter's process model (equation 1: `xt = f(xt-1, ut-1) + wt-1`) to propagate state during GPS outages, with covariance growth naturally tracking confidence degradation.
+
+1. Implement process model for prediction-only mode
+   - State vector: `[θ, θ_dot, drift_rate]` (angle, angular rate, learned drift)
+   - Process model:
+     ```
+     θ_new = θ_old + encoder_delta × scale + drift_rate × dt
+     θ_dot_new = encoder_delta / dt
+     drift_rate_new = drift_rate_old  // constant during outage
+     ```
+   - Covariance propagation: `P_new = F × P_old × F' + Q`
+   - Q (process noise) grows uncertainty each prediction step
+   - No arbitrary time thresholds—covariance tells us confidence
+
+2. Implement `DeadReckoningSystem` class
    - Operation mode state machine (FULL_FUSION, IMU_AIDED, ENCODER_ONLY, COAST_MODE)
-   - Drift accumulation tracking
-   - Confidence level calculation
-   - GPS outage timer
+   - Mode transitions based on covariance thresholds, not timers:
+     - `P < P_good`: FULL_FUSION (normal operation)
+     - `P < P_degraded`: IMU_AIDED (no GPS, but acceptable)
+     - `P < P_warning`: ENCODER_ONLY (warn operator)
+     - `P >= P_critical`: COAST_MODE (recommend manual)
+   - Suggested thresholds: P_good=1°², P_degraded=4°², P_warning=9°², P_critical=25°²
+   - GPS outage timer for logging/diagnostics only
 
-2. Add graceful degradation logic
-   - 0-30 seconds: Continue with increased uncertainty
-   - 30 seconds-5 minutes: Reduce gains, warn operator
-   - >5 minutes: Safe mode, recommend manual control
+3. IMU cross-validation during dead reckoning
+   - Compare encoder-derived angular rate to IMU yaw rate:
+     ```
+     encoder_rate = encoder_delta × scale / dt
+     imu_rate = yaw_rate × wheelbase / speed  // Ackermann conversion
+     rate_error = |encoder_rate - imu_rate|
+     ```
+   - If `rate_error > threshold` for sustained period:
+     - Possible encoder slip, valve lag, or intervention
+     - Increase Q temporarily (faster covariance growth)
+     - Flag for virtual turn sensor
+   - If rates agree well, encoder is trustworthy
 
-3. Implement sensor fallback hierarchy
-   - Primary: GPS + IMU + Encoder
-   - Fallback 1: IMU + Encoder
-   - Fallback 2: Encoder only
+4. Adaptive process noise Q
+   - Base Q from learned drift variance during GPS-available periods
+   - Increase Q based on operating conditions:
+     - `Q_adjusted = Q_base × speed_factor × roughness_factor × temp_factor`
+     - Speed factor: higher speed = faster angle changes = more uncertainty
+     - Roughness factor: from IMU accelerometer variance (bumpy field)
+     - Temperature factor: hydraulic viscosity changes affect response
+   - This makes covariance growth realistic, not pessimistic
+
+5. Implement sensor fallback hierarchy
+   - Primary: GPS + IMU + Encoder (full measurement update)
+   - Fallback 1: IMU + Encoder (IMU provides partial observability)
+     - Use IMU yaw rate as weak measurement: `z_imu = yaw_rate × wheelbase / speed`
+     - Higher R (less trust) than GPS-derived angle
+   - Fallback 2: Encoder only (prediction only, no measurement update)
+     - Covariance grows unbounded
    - Emergency: Coast on last known angle
+     - If encoder also fails, hold last angle
+     - Maximum covariance, strong warnings
 
-**Test**: Disable GPS at various durations, verify smooth degradation
-**Commit**: "feat: add dead reckoning for GPS outages"
+6. Bounded covariance with physical constraints
+   - Cap P at physical maximum: wheel can't be more than ±45° uncertain
+   - `P_max = (45°)² = 2025°²`
+   - Apply angle constraints in prediction: clamp θ to [-45°, +45°]
+   - Prevents filter divergence during extended outages
+
+**Test**:
+- Disable GPS at various durations, verify smooth degradation
+- Monitor covariance growth rate, verify matches expected drift
+- Test IMU cross-validation with simulated encoder errors
+- Verify mode transitions occur at appropriate uncertainty levels
+
+**Commit**: "feat: add dead reckoning with covariance-based degradation"
 
 ### Step 3.4: GPS Reacquisition
 **Goal**: Smooth recovery when GPS returns
 
-1. Implement reacquisition handler
-   - Gradual trust rebuilding (5-second blend period)
-   - Drift estimation and correction
-   - Kalman filter reinitialization with high uncertainty
+**Key insight from GPS-IMU fusion research**: Rather than fixed blend periods, use the Kalman filter's natural covariance mechanics for mathematically optimal reacquisition.
 
-2. Add drift learning
+1. Implement innovation-based validation
+   - Calculate innovation: `v = z_gps - z_predicted` (difference between GPS measurement and encoder prediction)
+   - Compute normalized innovation squared (NIS): `NIS = v² / (P + R)`
+   - Apply chi-squared gating: reject measurement if `NIS > threshold` (typically 5.99 for 95% confidence, 1 DOF)
+   - This detects GPS jumps vs legitimate position changes
+   - Log rejected measurements for diagnostics
+
+2. Covariance-driven trust rebuilding (replaces fixed 5-second blend)
+   - On GPS return, DON'T reinitialize filter state
+   - Instead, inflate state covariance P based on outage duration:
+     - `P_inflated = P_current + (drift_rate² × outage_time²)`
+   - Let Kalman gain naturally increase due to high P
+   - Trust rebuilds organically as measurements reduce P
+   - Typical convergence: 2-10 updates depending on drift accumulated
+
+3. Sequential measurement acceptance
+   - First GPS fix after outage: apply extra-conservative gating (NIS < 3.0)
+   - If rejected, wait for next fix rather than forcing acceptance
+   - After 3 consecutive accepted fixes, return to normal gating
+   - Prevents single bad fix from corrupting state
+
+4. Add drift learning
    - Track drift patterns during outages
-   - Update drift models based on recovery data
-   - Temperature and time correlations
+   - On reacquisition, compute actual drift: `drift = z_gps - z_predicted`
+   - Update drift model: `drift_rate = α × (drift / outage_time) + (1-α) × drift_rate_old`
+   - Use exponential smoothing (α ≈ 0.1) for gradual adaptation
+   - Correlate with temperature, load, and outage duration
+   - Store learned drift rates for predictive compensation
 
-3. Add operator notifications
+5. Add operator notifications
    - GPS lost warning (after 30 seconds)
-   - Degraded mode indication
+   - Degraded mode indication with confidence percentage
    - GPS recovered confirmation
+   - "Stabilizing..." indicator during covariance convergence
 
-**Test**: Cycle GPS on/off, verify smooth transitions
-**Commit**: "feat: add GPS reacquisition and drift learning"
+**Test**:
+- Cycle GPS on/off, verify smooth transitions
+- Inject simulated GPS jumps, verify rejection
+- Measure convergence time vs outage duration
+- Verify drift model improves over multiple outages
+
+**Commit**: "feat: add GPS reacquisition with innovation gating"
 
 ### Step 3.5: Drift Compensation
 **Goal**: Minimize error accumulation during dead reckoning
@@ -283,20 +585,63 @@ This plan breaks down the sensor fusion implementation into small, testable incr
 ## Phase 4: Enhanced Features (Week 7-8)
 
 ### Step 4.1: Multi-Sensor Support
-**Goal**: Support different sensor combinations
+**Goal**: Support different sensor combinations with robust roll compensation
 
-1. Add IMU heading rate option
-   - Get rotation rate from IMU
-   - Switch between GPS and IMU sources
-   - Automatic source selection
+**Key challenge**: GPS antenna mounted high on cab rocks ±0.5m laterally on sidehills. IMU provides essential roll data for compensation.
 
-2. Add sensor priority system
-   - Define sensor hierarchy
-   - Automatic failover
-   - Health monitoring
+1. Roll source priority system
+   - Priority 1: IMU roll (BNO085/TM171) - fastest, most reliable
+   - Priority 2: Dual-GPS roll (from RELPOSNED or KSXT pitch field)
+   - Priority 3: INS roll (from INSPVAXA if available)
+   - Automatic failover between sources
+   - Roll source health monitoring (staleness, variance)
 
-**Test**: Disable various sensors, verify failover
-**Commit**: "feat: add multi-sensor support"
+2. Add IMU heading rate option
+   - Get yaw rate from IMU gyroscope
+   - Advantage: Not affected by antenna displacement
+   - Use when GPS heading rate is unreliable (low speed, high roll rate)
+   - Cross-validate with GPS-derived heading rate when both available:
+     ```
+     // IMU yaw rate is clean (body-fixed)
+     // GPS heading rate includes antenna motion artifacts
+     // Agreement indicates good GPS conditions
+     rate_agreement = |imu_yaw_rate - gps_heading_rate_corrected|
+     ```
+
+3. Sidehill-specific fusion weights
+   - Detect sidehill operation: `|roll| > 5°`
+   - On sidehill, increase trust in IMU yaw rate vs GPS heading rate:
+     ```
+     R_gps_heading = R_base × (1 + k_sidehill × |roll|)
+     ```
+   - IMU gyro not affected by antenna position, so more reliable
+   - Log sidehill operation statistics for tuning
+
+4. Roll rate limiting for GPS corrections
+   - During rapid roll changes (entering/exiting sidehill):
+     ```
+     if |roll_rate| > threshold:  // e.g., 5°/second
+         // Antenna is swinging, GPS heading unreliable
+         // Rely more on IMU and encoder
+         R_gps = R_gps × 5  // Temporarily distrust GPS
+     ```
+   - Resume normal GPS trust when roll stabilizes
+
+5. Add sensor priority system
+   - Define sensor hierarchy per measurement type:
+     - Roll: IMU > Dual-GPS > INS
+     - Heading rate: IMU (sidehill) / GPS (flat) > encoder-derived
+     - Speed: GPS > wheel speed sensor
+   - Automatic failover with covariance adjustment
+   - Health monitoring and staleness detection
+
+**Test**:
+- Disable various sensors, verify failover
+- Test on 15° sidehill: verify roll compensation reduces error
+- Compare GPS-only vs IMU-aided heading on sidehills
+- Verify rapid roll transitions handled correctly
+
+**Commit**: "feat: add multi-sensor support with roll compensation"
 
 ### Step 4.2: Enhanced Virtual Turn Sensor
 **Goal**: Improve intervention detection with advanced algorithms
@@ -431,74 +776,113 @@ This plan breaks down the sensor fusion implementation into small, testable incr
 2. **Action**: Disable GPS for 20 seconds
 3. **Expected**:
    - Steering continues normally
+   - Mode remains IMU_AIDED (P < P_degraded = 4°²)
    - No operator warning
    - Accuracy within ±1°
 4. **Recovery**: Re-enable GPS
-5. **Verify**: Smooth transition back to full fusion
+5. **Verify**:
+   - Innovation gating accepts first fix (NIS < 5.99)
+   - Covariance drops back to P_good within 3-5 updates
+   - Smooth transition back to full fusion
 
 #### Test 2: Extended GPS Outage (1-2 minutes)
 1. **Setup**: Straight line operation
 2. **Action**: Disable GPS for 90 seconds
 3. **Expected**:
-   - Warning after 30 seconds
-   - Reduced steering gains
+   - Mode transitions: FULL_FUSION → IMU_AIDED → ENCODER_ONLY
+   - Warning when P exceeds P_warning (9°²)
+   - Covariance grows predictably per process noise Q
    - Accuracy within ±3°
 4. **Recovery**: Re-enable GPS
-5. **Verify**: Drift correction applied, returns to normal within 10 seconds
+5. **Verify**:
+   - First GPS fix may be rejected if drift was large (NIS > threshold)
+   - Drift correction applied over 3-5 accepted measurements
+   - Covariance converges, not instant reset
 
 #### Test 3: GPS Cycling (Intermittent Loss)
 1. **Setup**: Normal operation
 2. **Action**: Cycle GPS on/off every 15 seconds for 5 minutes
 3. **Expected**:
-   - System adapts to intermittent availability
-   - No oscillation or instability
-   - Maintains general heading
-4. **Verify**: Drift models update appropriately
+   - Covariance oscillates but stays bounded
+   - No mode oscillation (hysteresis prevents rapid switching)
+   - Innovation gating prevents bad fix acceptance
+   - Drift model updates with each reacquisition
+4. **Verify**:
+   - Drift rate estimate converges to true value
+   - System stability improves as drift model learns
 
-#### Test 4: IMU Failure During GPS Outage
+#### Test 4: IMU Cross-Validation
+1. **Setup**: Normal operation with GPS disabled
+2. **Action**: Introduce encoder error (e.g., slip, miscalibration)
+3. **Expected**:
+   - IMU yaw rate disagrees with encoder-derived rate
+   - `rate_error = |encoder_rate - imu_rate|` exceeds threshold
+   - Process noise Q increases (faster covariance growth)
+   - Virtual turn sensor flag raised
+4. **Verify**: System detects inconsistency, doesn't blindly trust encoder
+
+#### Test 5: IMU Failure During GPS Outage
 1. **Setup**: Disable GPS
 2. **Action**: Disable IMU after 10 seconds
 3. **Expected**:
-   - Fallback to encoder-only mode
+   - Mode transition: IMU_AIDED → ENCODER_ONLY
+   - Covariance growth rate increases (lost cross-validation)
    - Additional warning to operator
    - Degraded but functional steering
 4. **Recovery**: Re-enable both sensors
-5. **Verify**: Proper sensor priority restoration
+5. **Verify**:
+   - IMU cross-validation resumes
+   - Proper sensor priority restoration
+   - Covariance converges faster with IMU available
 
-#### Test 5: Complete Sensor Loss
+#### Test 6: Complete Sensor Loss
 1. **Setup**: Normal operation
 2. **Action**: Disable all sensors sequentially
 3. **Expected**:
-   - Coast mode activation
+   - Mode transitions: FULL → IMU_AIDED → ENCODER_ONLY → COAST_MODE
+   - Covariance hits P_critical (25°²) then P_max (2025°²)
    - Strong warning to operator
-   - Maintains last known angle
+   - Maintains last known angle (clamped to ±45°)
    - Suggests manual control
 4. **Recovery**: Re-enable sensors
-5. **Verify**: System recovers gracefully
+5. **Verify**: System recovers gracefully with high initial uncertainty
 
-#### Test 6: Real-World Scenarios
+#### Test 7: Innovation Gating Validation
+1. **Setup**: Normal operation
+2. **Action**: Inject simulated GPS jump (sudden 10° offset)
+3. **Expected**:
+   - Innovation `v = z_gps - z_predicted` is large (~10°)
+   - NIS = v² / (P + R) exceeds threshold
+   - Measurement rejected, state unchanged
+   - Log shows "GPS measurement rejected: NIS=XX.X"
+4. **Verify**: Bad GPS fix doesn't corrupt filter state
+
+#### Test 8: Real-World Scenarios
 1. **Tree Line Navigation**:
    - Drive along tree lines with intermittent GPS
-   - Verify smooth operation transitions
-   - Monitor drift accumulation
+   - Monitor covariance and mode transitions
+   - Verify innovation gating handles multipath
 
 2. **Building/Structure Passage**:
    - Drive through barn or under structure
    - Test 30-60 second GPS loss
-   - Verify steering stability
+   - Verify covariance-based warnings appropriate
 
 3. **Valley Operations**:
    - Test in areas with poor GPS coverage
-   - Extended degraded operation
-   - Operator notification effectiveness
+   - Monitor drift model learning over multiple passes
+   - Verify adaptive Q responds to terrain roughness
 
 #### Performance Metrics to Track:
+- **Covariance growth rate** (°²/second) vs predicted Q
+- **Innovation statistics**: mean, variance, NIS distribution
+- **Drift rate estimate** accuracy (compare to actual on reacquisition)
+- **Mode transition thresholds**: verify P-based triggers work
+- **GPS rejection rate**: should be low (<5%) in good conditions
+- **Recovery convergence time**: updates to reach P_good
+- **IMU cross-validation error rate**: false positive/negative rates
+- **CPU usage during dead reckoning**
 - Maximum drift rate (degrees/minute)
-- Time to operator warning
-- Recovery time after GPS return
-- Steering oscillation during transitions
-- CPU usage during dead reckoning
-- Confidence level accuracy
 
 ## Risk Mitigation
 
@@ -515,6 +899,10 @@ This plan breaks down the sensor fusion implementation into small, testable incr
 ## Success Metrics
 
 ### Phase 1 Complete:
+- Tilt-compensated position operational:
+  - Tilt calibration working (zero offsets stored)
+  - Position correction applied in PAOGI (verified on 10°+ slope)
+  - Tilt source failover: IMU → Dual-GPS → INS
 - Fusion angle within 2° of WAS
 - No impact on existing functionality
 - Basic operation at >1 m/s
@@ -528,18 +916,35 @@ This plan breaks down the sensor fusion implementation into small, testable incr
 - Web-based calibration wizard functional
 
 ### Phase 3 Complete:
-- Adapts to GPS quality changes
-- Maintains accuracy during GPS degradation
-- Dead reckoning operational for 0-5 minute GPS outages
-- Smooth GPS reacquisition with drift correction
-- Operator warnings at appropriate thresholds
-- Drift rate <2°/minute during dead reckoning
-- No manual tuning required
+- Adapts to GPS quality changes via adaptive R calculation
+- Covariance-based mode transitions working (FULL_FUSION → IMU_AIDED → ENCODER_ONLY → COAST)
+- Dead reckoning operational for 0-5 minute GPS outages:
+  - 30-second outage: P stays below P_degraded (4°²), accuracy ±1°
+  - 90-second outage: P reaches P_warning (9°²), accuracy ±3°
+  - 5-minute outage: controlled degradation, accuracy ±5°
+- Innovation gating operational:
+  - GPS jump rejection working (NIS threshold = 5.99)
+  - GPS rejection rate <5% in good conditions
+  - No state corruption from multipath or reacquisition errors
+- IMU cross-validation detecting encoder inconsistencies
+- Smooth GPS reacquisition:
+  - Covariance-driven trust rebuilding (no fixed blend time)
+  - Recovery to P_good within 5-10 measurements
+  - Drift learning improving over multiple outage cycles
+- Drift rate <2°/minute during dead reckoning (matches Q prediction)
+- Operator warnings triggered by covariance thresholds, not timers
+- No manual tuning required—filter self-calibrates
 
 ### Phase 4 Complete:
-- Supports 3+ sensor configurations
+- Supports 3+ sensor configurations with automatic failover
+- Roll compensation operational:
+  - Sidehill accuracy within ±1° (same as flat ground)
+  - Antenna displacement correction working (tested at 15° roll)
+  - Roll source failover: IMU → Dual-GPS → INS
+  - Rapid roll transitions handled without GPS corruption
+- IMU yaw rate integration reducing GPS dependency on sidehills
 - Comprehensive diagnostics available
-- Field-tested in various conditions
+- Field-tested in various conditions including sidehills
 
 ### Phase 5 Complete:
 - Meets all performance targets
