@@ -53,6 +53,179 @@ This plan breaks down the sensor fusion implementation into small, testable incr
 **Test**: Feed known encoder values, verify output changes
 **Commit**: "feat: implement basic Kalman filter algorithm"
 
+### Step 1.3a: Tilt-Compensated Position (PREREQUISITE)
+**Goal**: Transform GPS antenna position to ground-level vehicle position
+
+**Why this matters**: GPS reports antenna position, but we need ground-level position. On a 15° sidehill with 2m antenna height, the antenna is 0.52m laterally offset from where the wheels actually are. Without compensation, ALL downstream calculations (heading, heading rate, wheel angle) inherit this error.
+
+```
+        GPS Antenna ●───────┐
+                    │       │ lateral_error = h × sin(roll)
+                    │       │ = 2m × sin(15°) = 0.52m
+                    │       ▼
+    ════════════════●═══════════════  Actual ground position
+                Vehicle centerline
+```
+
+**Dependency chain**:
+```
+Good tilt readings → Tilt-compensated position → Accurate heading → Correct wheel angle
+       ▲
+       │
+    THIS STEP
+```
+
+**GPS receiver categories for tilt compensation**:
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│ Receiver Type        │ Internal IMU? │ Tilt Problem?  │ Solution        │
+├──────────────────────────────────────────────────────────────────────────┤
+│ UM981/UM982 (INS)    │ YES           │ SOLVED         │ Uses internal   │
+│                      │               │                │ fusion, delivers│
+│                      │               │                │ corrected pos   │
+├──────────────────────────────────────────────────────────────────────────┤
+│ F9P dual + ext IMU   │ External      │ WE SOLVE IT    │ Use BNO085/TM171│
+│                      │ (BNO/TM171)   │                │ for correction  │
+├──────────────────────────────────────────────────────────────────────────┤
+│ F9P dual, no IMU     │ NO            │ CHICKEN & EGG  │ Limited - see   │
+│ (RELPOSNED/KSXT)     │               │                │ mitigations     │
+├──────────────────────────────────────────────────────────────────────────┤
+│ Single GPS + ext IMU │ External      │ WE SOLVE IT    │ Correct position│
+├──────────────────────────────────────────────────────────────────────────┤
+│ Single GPS, no IMU   │ NO            │ UNSOLVABLE     │ Cannot correct  │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+**Chicken-and-egg problem applies to: F9P dual-antenna WITHOUT external IMU**
+- Roll from dual-GPS geometry is valid, but:
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ Problem                      │ With IMU        │ Dual-GPS Only │
+├─────────────────────────────────────────────────────────────────┤
+│ Update rate                  │ 100Hz           │ 5-10Hz        │
+│ Startup (before convergence) │ IMU ready in 1s │ 30s+ wait     │
+│ GPS blockage (trees/building)│ IMU continues   │ Both fail     │
+│ Roll/position synchronization│ Independent     │ Same source   │
+│ Latency                      │ <10ms           │ 50-200ms      │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+Mitigations for dual-GPS-only systems (F9P without external IMU):
+- **Startup**: Don't apply position correction until dual-GPS converged (heading quality > threshold)
+- **Synchronization**: Use roll from SAME message as position (KSXT includes both)
+- **Blockage**: Fall back to last known roll with increasing uncertainty, or disable correction
+- **Between updates**: Hold previous roll (acceptable at 10Hz, problematic at 5Hz on rough terrain)
+- **Recommendation**: Add external IMU (BNO085 ~$15) or upgrade to UM981
+
+**UM981/UM982 is the best solution**: Internal IMU handles tilt compensation automatically, delivers corrected position via INSPVAXA, no chicken-and-egg problem.
+
+1. Implement tilt source manager
+   - Priority 1: UM981/UM982 INS (position already corrected, just use roll for display)
+   - Priority 2: External IMU roll/pitch (BNO085/TM171) - 100Hz, fast response
+   - Priority 3: Dual-GPS roll (from RELPOSNED or KSXT) - 5-10Hz, limited
+   - Automatic failover with quality tracking
+   - **Flag when operating in dual-GPS-only mode** (warn user, recommend IMU)
+   - Output: `getTiltData()` returns roll, pitch, source, quality, timestamp
+
+2. Add tilt calibration
+   - Store roll/pitch zero offsets in EEPROM (existing `insRollOffset`, `insPitchOffset`)
+   - Add web UI calibration: "Park on level ground, click Calibrate"
+   - Apply offsets before any calculations:
+     ```
+     roll_corrected = roll_raw - rollOffset
+     pitch_corrected = pitch_raw - pitchOffset
+     ```
+
+3. Add tilt filtering
+   - Low-pass filter for noise reduction (cutoff ~2Hz for roll, ~1Hz for pitch)
+   - Reject outliers (|roll| > 45°, |pitch| > 30°)
+   - Track tilt rate for dynamic detection:
+     ```
+     roll_rate = (roll_current - roll_previous) / dt
+     if |roll_rate| > 20°/s: flag as dynamic
+     ```
+
+4. Implement position compensation in NAVProcessor
+   - Add `antennaHeight` to ConfigManager (default 2.0m)
+
+   **CRITICAL: Know your position source!**
+   ```
+   ┌────────────────────────────────────────────────────────────────────┐
+   │ Source          │ Has internal IMU? │ Position tilt-compensated?  │
+   ├────────────────────────────────────────────────────────────────────┤
+   │ UM981 INSPVAXA  │ YES (onboard)     │ YES - DO NOT double-correct │
+   │ UM982 INSPVAXA  │ YES (onboard)     │ YES - DO NOT double-correct │
+   │ F9P RELPOSNED   │ NO                │ NO - we must correct        │
+   │ Dual-GPS KSXT   │ NO                │ NO - we must correct        │
+   │ Single GPS+IMU  │ External BNO/TM   │ NO - we must correct        │
+   │ Single GPS only │ NO                │ NO - cannot correct (no roll)│
+   └────────────────────────────────────────────────────────────────────┘
+   ```
+
+   - **For UM981/UM982 (INSPVAXA with INS):**
+     - Position is ALREADY tilt-compensated by internal IMU fusion
+     - Pass through position unchanged
+     - Use roll/pitch from INSPVAXA for display and heading rate compensation
+     - Set `position_compensated = true`
+
+   - **For dual-GPS without internal IMU (F9P RELPOSNED, KSXT):**
+     - Position is raw antenna position - NOT compensated
+     - Use roll from SAME message as position (synchronized)
+     - Apply our tilt correction
+     - KSXT: roll is in pitch field (heading/pitch/roll naming is confusing)
+
+   - **For single GPS + external IMU (BNO085/TM171):**
+     - Position is raw antenna position - NOT compensated
+     - Interpolate IMU roll to GPS timestamp (100Hz → 10Hz)
+     - Apply our tilt correction
+
+   - **For single GPS without IMU:**
+     - Cannot correct - no roll source
+     - Flag as degraded, warn user
+
+   - Apply tilt correction (when needed):
+     ```
+     // Skip if source already compensated (UM981/UM982 INS)
+     if (gnssData.hasINS && gnssData.insStatus >= INS_ALIGNED) {
+         // Position already tilt-compensated by UM98x internal IMU
+         lat_corrected = lat;
+         lon_corrected = lon;
+         position_compensated = true;
+     }
+     else if (tilt_quality >= MINIMUM_QUALITY && tilt_age_ms < 200) {
+         // Apply our correction
+         east_correction = antenna_height × sin(roll)
+         north_correction = antenna_height × sin(pitch) × cos(roll)
+
+         lat_corrected = lat + north_correction / meters_per_degree_lat
+         lon_corrected = lon - east_correction / meters_per_degree_lon
+         position_compensated = true;
+     } else {
+         // No correction possible
+         lat_corrected = lat
+         lon_corrected = lon
+         position_compensated = false;
+         set_degraded_flag()
+     }
+     ```
+   - Send corrected position in PAOGI message
+   - Keep roll/pitch fields for AgOpenGPS display
+   - **Add flag indicating whether position is tilt-compensated**
+
+5. Add tilt data quality indicators
+   - Tilt source in use (IMU/Dual-GPS/INS)
+   - Tilt data age (staleness detection)
+   - Tilt variance (noise level)
+   - Dynamic flag (rapid tilt changes)
+
+**Test**:
+- Calibrate on level ground, verify zero offsets stored
+- Tilt vehicle manually, verify roll/pitch values correct
+- Park on known slope, verify position correction magnitude
+- Compare PAOGI lat/lon with and without correction on sidehill
+
+**Commit**: "feat: add tilt-compensated position calculation"
+
 ### Step 1.4: GPS Angle Calculation
 **Goal**: Calculate steering angle from GPS/INS data
 
@@ -726,6 +899,10 @@ This corrupts GPS heading rate and must be compensated before wheel angle calcul
 ## Success Metrics
 
 ### Phase 1 Complete:
+- Tilt-compensated position operational:
+  - Tilt calibration working (zero offsets stored)
+  - Position correction applied in PAOGI (verified on 10°+ slope)
+  - Tilt source failover: IMU → Dual-GPS → INS
 - Fusion angle within 2° of WAS
 - No impact on existing functionality
 - Basic operation at >1 m/s
