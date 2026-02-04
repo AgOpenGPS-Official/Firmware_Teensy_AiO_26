@@ -89,6 +89,9 @@ private:
     // Lindner tracking
     bool lindnerEngaged = false;        // Track Lindner engage state
 
+    // Massey Ferguson V-Bus tracking
+    bool masseyFergusonEngaged = false; // Track MF V-Bus engage state
+
     // Helper methods
     void assignCANBuses();
     void* getBusPointer(uint8_t busNum);
@@ -184,6 +187,9 @@ public:
 
     // Lindner-specific methods
     bool isLindnerEngaged() const { return lindnerEngaged; }
+
+    // Massey Ferguson-specific methods
+    bool isMasseyFergusonEngaged() const { return masseyFergusonEngaged; }
 
     // Valve ready status methods (for engagement safety check)
     bool isValveReady() const { return steerReady; }

@@ -845,7 +845,38 @@ void TractorCANDriver::processValtraMessage(const CAN_message_t& msg) {
     // Check for engage messages
     if (msg.flags.extended && (msg.id == 0x18EF1C32 || msg.id == 0x18EF1CFC || msg.id == 0x18EF1C00)) {
         // These are engage/disengage messages from different Valtra/MF variants
-        // Could be used to auto-enable/disable steering if needed
+
+        // Valtra engage (0x18EF1C32): buf[0]=15, buf[1]=96, buf[2]=1
+        if (msg.id == 0x18EF1C32 && msg.buf[0] == 15 && msg.buf[1] == 96 && msg.buf[2] == 1) {
+            if (!masseyFergusonEngaged) {
+                masseyFergusonEngaged = true;
+                LOG_INFO(EventSource::AUTOSTEER, "Valtra engage message received - steering engaged");
+            }
+        }
+
+        // McCormick engage (0x18EF1CFC): buf[0]=15, buf[1]=96, buf[3]=255
+        else if (msg.id == 0x18EF1CFC && msg.buf[0] == 15 && msg.buf[1] == 96 && msg.buf[3] == 255) {
+            if (!masseyFergusonEngaged) {
+                masseyFergusonEngaged = true;
+                LOG_INFO(EventSource::AUTOSTEER, "McCormick engage message received - steering engaged");
+            }
+        }
+
+        // Massey Ferguson engage (0x18EF1C00): buf[0]=15, buf[1]=96, buf[2]=1
+        else if (msg.id == 0x18EF1C00 && msg.buf[0] == 15 && msg.buf[1] == 96 && msg.buf[2] == 1) {
+            if (!masseyFergusonEngaged) {
+                masseyFergusonEngaged = true;
+                LOG_INFO(EventSource::AUTOSTEER, "Massey Ferguson engage message received - steering engaged");
+            }
+        }
+
+        // Disengage: if any condition doesn't match, set to disengaged
+        else {
+            if (masseyFergusonEngaged) {
+                masseyFergusonEngaged = false;
+                LOG_INFO(EventSource::AUTOSTEER, "Valtra/MF disengage message received - steering disengaged");
+            }
+        }
     }
 }
 

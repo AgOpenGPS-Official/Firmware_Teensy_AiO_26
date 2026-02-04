@@ -92,7 +92,7 @@
       "uiNotes": "V_Bus steering only - requires continuous valve ready messages",
 
       "canConfig": {
-        "VFilter": "0x0CAC1C13,0x18EF1C32",
+        "VFilter": "0x0CAC1C13,0x18EF1C32,0x18EF1CFC,0x18EF1C00",
         "VSendCurve": "0x0CAD131C",
         "SendCurve": "0,0,0,0,0,0,0",
         "SendCurveLoHi": "0,1",
@@ -178,9 +178,21 @@
           ]
         },
         {
+          "model": "Massey Ferguson 7600-Series",
+          "vClaim": "AA",
+          "notes": "Massey Ferguson 7600 series with V-Bus auto-engage (CAN ID 0x18EF1C00). The firmware automatically detects engage messages from the tractor's V-Bus - no manual steer button configuration required. The engage condition is: buf[0]=15 (0x0F), buf[1]=96 (0x60), buf[2]=1. When the tractor sends this engage message, the autosteer system will automatically activate.",
+          "steer": []
+        },
+        {
+          "model": "Massey Ferguson V-Bus Engage (General)",
+          "vClaim": "AA",
+          "notes": "General Massey Ferguson tractors with V-Bus auto-engage (CAN ID 0x18EF1C00). The firmware automatically detects engage messages from the tractor's V-Bus - no manual steer button configuration required. The engage condition is: buf[0]=15 (0x0F), buf[1]=96 (0x60), buf[2]=1. This works alongside the standard K_Bus button configurations above.",
+          "steer": []
+        },
+        {
           "model": "Valtra General",
           "vClaim": "1C",
-          "notes": "Valtra tractors with standard engage button",
+          "notes": "Valtra tractors with standard engage button (K_Bus)",
           "steer": [
             {
               "buttonLabel": "Engage button",
@@ -188,13 +200,6 @@
               "canFilterID": "0x18EF1C32",
               "byte": 2,
               "onStateAND": 1
-            },
-            {
-              "buttonLabel": "Engage button (alternative)",
-              "bus": "K_Bus",
-              "canFilterID": "0x18EF1C00",
-              "byte": 2,
-              "onStateAND": 196
             }
           ]
         }
