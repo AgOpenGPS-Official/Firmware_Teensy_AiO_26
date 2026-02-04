@@ -823,6 +823,9 @@ void TractorCANDriver::processLindnerKBusMessage(const CAN_message_t& msg) {
 void TractorCANDriver::processValtraMessage(const CAN_message_t& msg) {
     // Check for curve data and valve state message
     if (msg.id == 0x0CAC1C13 && msg.flags.extended) {
+        // Mark that we're receiving valve data
+        valveDataReceived = true;
+
         // Extract steering curve (little-endian)
         int16_t estCurve = (msg.buf[1] << 8) | msg.buf[0];
 
@@ -835,6 +838,12 @@ void TractorCANDriver::processValtraMessage(const CAN_message_t& msg) {
             }
             steerReady = true;
             lastSteerReadyTime = millis();
+        } else {
+            // Valve data received but not ready - user needs to turn steering wheel
+            if (steerReady) {
+                LOG_WARNING(EventSource::AUTOSTEER, "Valtra steering valve not ready - turn wheel to activate");
+            }
+            steerReady = false;
         }
 
         // Store actual position for feedback (convert to our scale)

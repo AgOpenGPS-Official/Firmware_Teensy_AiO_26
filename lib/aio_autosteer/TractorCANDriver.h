@@ -92,6 +92,9 @@ private:
     // Massey Ferguson V-Bus tracking
     bool masseyFergusonEngaged = false; // Track MF V-Bus engage state
 
+    // Valve state tracking for detailed error messages
+    bool valveDataReceived = false;     // Track if we're receiving valve data (0x0CAC1C13)
+
     // Helper methods
     void assignCANBuses();
     void* getBusPointer(uint8_t busNum);
@@ -193,6 +196,7 @@ public:
 
     // Valve ready status methods (for engagement safety check)
     bool isValveReady() const { return steerReady; }
+    bool isValveDataReceived() const { return valveDataReceived; }
     uint32_t getTimeSinceLastValveReady() const {
         return steerReady ? 0 : (millis() - lastSteerReadyTime);
     }

@@ -42,10 +42,14 @@ AutosteerProcessor* autosteerPTR = nullptr;
 AutosteerProcessor* AutosteerProcessor::instance = nullptr;
 
 // Helper function: Get brand-specific valve/motor not ready message
-static const char* getTractorValveMessage(TractorBrand brand) {
+static const char* getTractorValveMessage(TractorBrand brand, bool valveDataReceived) {
     switch (brand) {
         case TractorBrand::VALTRA_MASSEY:
-            return "Valtra/MF steering valve not ready! Check CAN connection.";
+            if (valveDataReceived) {
+                return "Valtra/MF: Turn steering wheel to activate valve!";
+            } else {
+                return "Valtra/MF: No CAN data! Check connection.";
+            }
         case TractorBrand::FENDT:
         case TractorBrand::FENDT_ONE:
             return "Fendt steering valve not ready! Check CAN connection.";
@@ -341,7 +345,8 @@ void AutosteerProcessor::process() {
 
                         // Block engagement if not ready
                         if (!motorReady) {
-                            const char* message = getTractorValveMessage(brand);
+                            bool valveDataReceived = tractorCAN->isValveDataReceived();
+                            const char* message = getTractorValveMessage(brand, valveDataReceived);
                             MessageBuilder::sendHardwarePopup(message, 5, 1);  // 5 sec, warning color
 
                             LOG_WARNING(EventSource::AUTOSTEER,
@@ -403,7 +408,8 @@ void AutosteerProcessor::process() {
 
                             // Block engagement if not ready
                             if (!motorReady) {
-                                const char* message = getTractorValveMessage(brand);
+                                bool valveDataReceived = tractorCAN->isValveDataReceived();
+                                const char* message = getTractorValveMessage(brand, valveDataReceived);
                                 MessageBuilder::sendHardwarePopup(message, 5, 1);
 
                                 LOG_WARNING(EventSource::AUTOSTEER,
@@ -457,7 +463,8 @@ void AutosteerProcessor::process() {
 
                     // Block engagement if not ready
                     if (!motorReady) {
-                        const char* message = getTractorValveMessage(brand);
+                        bool valveDataReceived = tractorCAN->isValveDataReceived();
+                        const char* message = getTractorValveMessage(brand, valveDataReceived);
                         MessageBuilder::sendHardwarePopup(message, 5, 1);
 
                         LOG_WARNING(EventSource::AUTOSTEER,
