@@ -857,35 +857,22 @@ void TractorCANDriver::processValtraMessage(const CAN_message_t& msg) {
 
         // Valtra engage (0x18EF1C32): buf[0]=15, buf[1]=96, buf[2]=1
         if (msg.id == 0x18EF1C32 && msg.buf[0] == 15 && msg.buf[1] == 96 && msg.buf[2] == 1) {
-            if (!masseyFergusonEngaged) {
-                masseyFergusonEngaged = true;
-                LOG_INFO(EventSource::AUTOSTEER, "Valtra engage message received - steering engaged");
-            }
+            masseyFergusonEngaged = true;
         }
 
         // McCormick engage (0x18EF1CFC): buf[0]=15, buf[1]=96, buf[3]=255
         else if (msg.id == 0x18EF1CFC && msg.buf[0] == 15 && msg.buf[1] == 96 && msg.buf[3] == 255) {
-            if (!masseyFergusonEngaged) {
-                masseyFergusonEngaged = true;
-                LOG_INFO(EventSource::AUTOSTEER, "McCormick engage message received - steering engaged");
-            }
+            masseyFergusonEngaged = true;
         }
 
         // Massey Ferguson engage (0x18EF1C00): buf[0]=15, buf[1]=96, buf[2]=1
         else if (msg.id == 0x18EF1C00 && msg.buf[0] == 15 && msg.buf[1] == 96 && msg.buf[2] == 1) {
-            if (!masseyFergusonEngaged) {
-                masseyFergusonEngaged = true;
-                LOG_INFO(EventSource::AUTOSTEER, "Massey Ferguson engage message received - steering engaged");
-            }
+            masseyFergusonEngaged = true;
         }
 
-        // Disengage: if any condition doesn't match, set to disengaged
-        else {
-            if (masseyFergusonEngaged) {
-                masseyFergusonEngaged = false;
-                LOG_INFO(EventSource::AUTOSTEER, "Valtra/MF disengage message received - steering disengaged");
-            }
-        }
+        // Note: We don't set masseyFergusonEngaged = false here anymore
+        // The state will persist until we explicitly detect a disengage pattern
+        // This prevents unintended disengagement from other messages on these CAN IDs
     }
 }
 

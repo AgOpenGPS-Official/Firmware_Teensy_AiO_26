@@ -90,7 +90,7 @@ private:
     bool lindnerEngaged = false;        // Track Lindner engage state
 
     // Massey Ferguson V-Bus tracking
-    bool masseyFergusonEngaged = false; // Track MF V-Bus engage state
+    bool masseyFergusonEngaged = false;  // Track MF V-Bus engage state
 
     // Valve state tracking for detailed error messages
     bool valveDataReceived = false;     // Track if we're receiving valve data (0x0CAC1C13)

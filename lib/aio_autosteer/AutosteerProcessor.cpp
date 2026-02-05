@@ -237,6 +237,7 @@ void AutosteerProcessor::process() {
     static bool lastClaasEngageState = false;
     static bool lastJcbEngageState = false;
     static bool lastLindnerEngageState = false;
+    static bool lastMasseyFergusonEngageState = false;
 
     // Debug: log button/switch config periodically
     static uint32_t lastConfigLog = 0;
@@ -254,6 +255,7 @@ void AutosteerProcessor::process() {
 
             // Also check tractor-specific buttons if using TractorCANDriver
             bool masseyEngagePressed = false;
+            bool masseyFergusonVBusEngagePressed = false;
             bool fendtButtonPressed = false;
             bool caseIHEngagePressed = false;
             bool catMTEngagePressed = false;
@@ -319,11 +321,20 @@ void AutosteerProcessor::process() {
                     lindnerEngagePressed = true;
                 }
                 lastLindnerEngageState = currentLindnerEngage;
+
+                // Check Massey Ferguson V-Bus engage state
+                bool currentMasseyFergusonEngage = tractorCAN->isMasseyFergusonEngaged();
+                // Detect rising edge of MF V-Bus engage (OFF to ON transition)
+                if (currentMasseyFergusonEngage && !lastMasseyFergusonEngageState) {
+                    masseyFergusonVBusEngagePressed = true;
+                }
+                lastMasseyFergusonEngageState = currentMasseyFergusonEngage;
             }
 
             // Check if any button was pressed
             if ((buttonReading == LOW && lastButtonReading == HIGH) || masseyEngagePressed ||
-                fendtButtonPressed || caseIHEngagePressed || catMTEngagePressed || claasEngagePressed || jcbEngagePressed || lindnerEngagePressed) {
+                masseyFergusonVBusEngagePressed || fendtButtonPressed || caseIHEngagePressed ||
+                catMTEngagePressed || claasEngagePressed || jcbEngagePressed || lindnerEngagePressed) {
 
                 // SAFETY CHECK: Verify motor/valve ready before engagement
                 // Only check for TractorCAN drivers (not PWM or Keya Serial)
@@ -364,6 +375,7 @@ void AutosteerProcessor::process() {
                 // Button was just pressed - toggle state
                 steerState = !steerState;
                 const char* buttonType = masseyEngagePressed ? "Massey K_Bus button" :
+                                        masseyFergusonVBusEngagePressed ? "Massey Ferguson V-Bus" :
                                         fendtButtonPressed ? "Fendt armrest button" :
                                         caseIHEngagePressed ? "Case IH engage" :
                                         catMTEngagePressed ? "CAT MT engage" :
