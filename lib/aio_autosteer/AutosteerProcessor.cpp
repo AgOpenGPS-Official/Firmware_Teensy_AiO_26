@@ -46,9 +46,9 @@ static const char* getTractorValveMessage(TractorBrand brand, bool valveDataRece
     switch (brand) {
         case TractorBrand::VALTRA_MASSEY:
             if (valveDataReceived) {
-                return "Valtra/MF: Turn steering wheel to activate valve!";
+                return "Turn steering wheel to activate valve!";
             } else {
-                return "Valtra/MF: No CAN data! Check connection.";
+                return "No CAN data! Check connection.";
             }
         case TractorBrand::FENDT:
         case TractorBrand::FENDT_ONE:
@@ -358,7 +358,7 @@ void AutosteerProcessor::process() {
                         if (!motorReady) {
                             bool valveDataReceived = tractorCAN->isValveDataReceived();
                             const char* message = getTractorValveMessage(brand, valveDataReceived);
-                            MessageBuilder::sendHardwarePopup(message, 5, 1);  // 5 sec, warning color
+                            MessageBuilder::sendHardwarePopup(message, 2, 1);  // 2 sec, warning color
 
                             LOG_WARNING(EventSource::AUTOSTEER,
                                 "Autosteer engagement blocked - motor/valve not ready (brand: %d)",
@@ -422,7 +422,7 @@ void AutosteerProcessor::process() {
                             if (!motorReady) {
                                 bool valveDataReceived = tractorCAN->isValveDataReceived();
                                 const char* message = getTractorValveMessage(brand, valveDataReceived);
-                                MessageBuilder::sendHardwarePopup(message, 5, 1);
+                                MessageBuilder::sendHardwarePopup(message, 2, 1);
 
                                 LOG_WARNING(EventSource::AUTOSTEER,
                                     "Autosteer engagement blocked via switch - motor/valve not ready (brand: %d)",
