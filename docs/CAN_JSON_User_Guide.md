@@ -4,15 +4,16 @@ This guide explains how to create, customize, and use CAN bus JSON configuration
 
 ## Table of Contents
 1. [Overview](#overview)
-2. [Quick Start](#quick-start)
-3. [File Structure Reference](#file-structure-reference)
-4. [Creating a Custom Configuration](#creating-a-custom-configuration)
-5. [Adding Steer Engage Buttons](#adding-steer-engage-buttons)
-6. [Adding Work/Hitch Control](#adding-workhitch-control)
-7. [CAN Protocol Settings](#can-protocol-settings)
-8. [Discovering CAN Messages](#discovering-can-messages)
-9. [Troubleshooting](#troubleshooting)
-10. [Examples](#examples)
+2. [How CAN Configs Work (Protocol Engine)](#how-can-configs-work-protocol-engine)
+3. [Quick Start](#quick-start)
+4. [File Structure Reference](#file-structure-reference)
+5. [Creating a Custom Configuration](#creating-a-custom-configuration)
+6. [Adding Steer Engage Buttons](#adding-steer-engage-buttons)
+7. [Adding Work/Hitch Control](#adding-workhitch-control)
+8. [CAN Protocol Settings](#can-protocol-settings)
+9. [Discovering CAN Messages](#discovering-can-messages)
+10. [Troubleshooting](#troubleshooting)
+11. [Examples](#examples)
 
 ---
 
@@ -32,6 +33,87 @@ CAN JSON configuration files define how AiO v26 communicates with your tractor's
 - Your specific model has different button CAN IDs than existing configs
 - You want to add support for additional buttons or sensors
 - You're reverse-engineering a new tractor's CAN bus
+
+---
+
+## How CAN Configs Work (Protocol Engine)
+
+### What Changed
+
+AiO v26 includes a **protocol engine** that reads your JSON configuration at boot and uses it to drive all CAN behavior automatically. Instead of requiring firmware changes for each tractor brand, the engine interprets the JSON config to handle:
+
+- Steering valve commands (send/receive)
+- Steer engage button detection
+- Valve ready status monitoring
+- CAN bus hardware filtering
+
+This means you can add support for a new tractor brand or model by uploading a JSON file — no firmware recompilation needed.
+
+### How It Works
+
+1. **Upload** a JSON config via the web UI at `http://192.168.5.126/canupload`
+2. The config is **stored on device flash** (LittleFS) and persists across reboots
+3. At boot, the firmware **loads the config** and matches it to your selected brand
+4. The protocol engine takes over CAN communication for that brand
+
+### What You See in the Serial Log
+
+When the protocol engine loads successfully, you'll see:
+
+```
+CANProtocolEngine: Loading config for FENDT (id=4)
+CANProtocolEngine: 3 filter IDs parsed
+CANProtocolEngine: 2 engage rules loaded, 5 total filter IDs
+  Rule[0]: CAN 0x14FF7706 rising 2 conditions "Armrest button"
+  Rule[1]: CAN 0x613 falling 1 conditions "Joystick button"
+Protocol engine loaded - 2 engage rules, 5 filters
+```
+
+- **engage rules** — patterns the engine watches for to detect steer button presses
+- **filters** — CAN IDs programmed into hardware mailboxes so only relevant messages are processed
+
+If no config is uploaded, or the config doesn't match your selected brand, you'll see:
+
+```
+Protocol engine not loaded - using legacy brand code
+```
+
+This is normal — it means the firmware is using its built-in brand support instead.
+
+### Fallback Behavior (Temporary)
+
+During development and testing of the protocol engine, the firmware falls back to legacy hard-coded brand logic when:
+
+- No JSON config has been uploaded
+- The uploaded config doesn't contain your selected brand
+- The JSON has a parse error (check serial log for details)
+- The brand is set to DISABLED
+- Keya motor mode is active (Keya uses its own CAN protocol)
+
+This fallback exists so existing users are not disrupted while the engine is validated. Once the protocol engine is fully tested, the hard-coded brand logic will be removed — JSON configs will be the sole mechanism for CAN brand support. That is the point of using JSON: brand support becomes a data problem, not a firmware problem.
+
+### When You DON'T Need a Custom Config
+
+If your tractor brand is already supported in the firmware, it works out of the box without uploading anything. Built-in brands include:
+
+| Brand | Notes |
+|-------|-------|
+| Case IH / New Holland | |
+| CAT MT Series | |
+| Claas | |
+| Fendt SCR/S4/Gen6 | |
+| Fendt One | |
+| JCB | |
+| Lindner | |
+| Valtra / Massey Ferguson | |
+| Generic (Keya) | For Keya BLDC motors |
+
+You only need to upload a JSON config when:
+- You want to add a **steer engage button** that isn't in the built-in code
+- You have a brand or model **not listed above**
+- You want to **customize** steering valve parameters for your specific setup
+
+If you do upload a config for a built-in brand, the protocol engine takes over and uses your config instead of the built-in code.
 
 ---
 

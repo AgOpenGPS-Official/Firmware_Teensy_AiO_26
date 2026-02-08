@@ -6,6 +6,7 @@
 
 // TractorCANDriver.cpp - Unified CAN driver implementation
 #include "TractorCANDriver.h"
+#include "CANConfigStorage.h"
 
 bool TractorCANDriver::init() {
     // Load configuration from EEPROM
@@ -13,6 +14,24 @@ bool TractorCANDriver::init() {
 
     // Assign CAN bus pointers based on configuration
     assignCANBuses();
+
+    // Try to load JSON config for data-driven protocol engine
+    // Skip for Keya motors (separate protocol) and disabled brand
+    if (config.brand != static_cast<uint8_t>(TractorBrand::DISABLED) && !hasKeyaFunction()) {
+        if (CANConfigStorage::hasCustomConfig()) {
+            String json = CANConfigStorage::readCustomConfig();
+            if (json.length() > 0) {
+                useProtocolEngine = protocolEngine.loadConfig(
+                    json.c_str(), json.length(), config.brand);
+            }
+        }
+        if (useProtocolEngine) {
+            LOG_INFO(EventSource::AUTOSTEER, "Protocol engine loaded - %d engage rules, %d filters",
+                     protocolEngine.getEngageRuleCount(), protocolEngine.getFilterCount());
+        } else {
+            LOG_INFO(EventSource::AUTOSTEER, "Protocol engine not loaded - using legacy brand code");
+        }
+    }
 
     LOG_INFO(EventSource::AUTOSTEER, "TractorCANDriver initialized - Brand: %d", config.brand);
 
@@ -164,8 +183,19 @@ void TractorCANDriver::processIncomingMessages() {
             // If this bus has Keya function, process Keya messages
             if (hasKeyaFunction()) {
                 processKeyaMessage(msg);
+            } else if (useProtocolEngine) {
+                // Data-driven path: protocol engine handles all brands
+                protocolEngine.processIncomingMessage(msg);
+
+                // Sync engine valve state back to TractorCANDriver state
+                if (protocolEngine.isValveReady()) {
+                    steerReady = true;
+                    lastSteerReadyTime = millis();
+                } else if (protocolEngine.isValveDataReceived()) {
+                    steerReady = false;
+                }
             } else {
-                // Otherwise process based on brand
+                // Legacy: process based on brand
                 switch (static_cast<TractorBrand>(config.brand)) {
                     case TractorBrand::CASEIH_NH:
                         processCaseIHMessage(msg);
@@ -189,7 +219,8 @@ void TractorCANDriver::processIncomingMessages() {
                     case TractorBrand::LINDNER:
                         processLindnerMessage(msg);
                         break;
-                    // Add other brands as needed
+                    default:
+                        break;
                 }
             }
         }
@@ -198,30 +229,37 @@ void TractorCANDriver::processIncomingMessages() {
     // Process button bus messages if configured
     if (buttonCAN && buttonBusNum > 0 && buttonBusNum != steerBusNum) {
         while (readCANMessage(buttonBusNum, msg)) {
-            switch (static_cast<TractorBrand>(config.brand)) {
-                case TractorBrand::CASEIH_NH:
-                    processCaseIHKBusMessage(msg);
-                    break;
-                case TractorBrand::VALTRA_MASSEY:
-                    processMasseyKBusMessage(msg);
-                    break;
-                case TractorBrand::FENDT:
-                case TractorBrand::FENDT_ONE:
-                    processFendtKBusMessage(msg);
-                    break;
-                case TractorBrand::CAT_MT:
-                    processCATKBusMessage(msg);
-                    break;
-                case TractorBrand::CLAAS:
-                    processClaasKBusMessage(msg);
-                    break;
-                case TractorBrand::JCB:
-                    processJcbKBusMessage(msg);
-                    break;
-                case TractorBrand::LINDNER:
-                    processLindnerKBusMessage(msg);
-                    break;
-                // TODO: Process work switch messages for other brands
+            if (useProtocolEngine) {
+                // Protocol engine handles engage button detection from any bus
+                protocolEngine.processIncomingMessage(msg);
+            } else {
+                // Legacy: brand-specific K_Bus handlers
+                switch (static_cast<TractorBrand>(config.brand)) {
+                    case TractorBrand::CASEIH_NH:
+                        processCaseIHKBusMessage(msg);
+                        break;
+                    case TractorBrand::VALTRA_MASSEY:
+                        processMasseyKBusMessage(msg);
+                        break;
+                    case TractorBrand::FENDT:
+                    case TractorBrand::FENDT_ONE:
+                        processFendtKBusMessage(msg);
+                        break;
+                    case TractorBrand::CAT_MT:
+                        processCATKBusMessage(msg);
+                        break;
+                    case TractorBrand::CLAAS:
+                        processClaasKBusMessage(msg);
+                        break;
+                    case TractorBrand::JCB:
+                        processJcbKBusMessage(msg);
+                        break;
+                    case TractorBrand::LINDNER:
+                        processLindnerKBusMessage(msg);
+                        break;
+                    default:
+                        break;
+                }
             }
         }
     }
@@ -238,8 +276,11 @@ void TractorCANDriver::sendSteerCommands() {
     // If any bus has Keya function, send Keya commands
     if (hasKeyaFunction()) {
         sendKeyaCommands();
+    } else if (useProtocolEngine) {
+        // Data-driven path
+        protocolEngine.sendSteerCommand(targetPWM, enabled && steerReady, steerBusNum);
     } else {
-        // Otherwise send based on brand
+        // Legacy: send based on brand
         switch (static_cast<TractorBrand>(config.brand)) {
             case TractorBrand::CASEIH_NH:
                 sendCaseIHCommands();
@@ -263,7 +304,8 @@ void TractorCANDriver::sendSteerCommands() {
             case TractorBrand::LINDNER:
                 sendLindnerCommands();
                 break;
-            // Add other brands as needed
+            default:
+                break;
         }
     }
 }
@@ -1007,6 +1049,21 @@ void TractorCANDriver::setConfig(const CANSteerConfig& newConfig) {
 
     LOG_INFO(EventSource::AUTOSTEER, "TractorCAN config updated - Brand: %d, SteerBus: %d",
              config.brand, steerBusNum);
+}
+
+bool TractorCANDriver::checkEngageEvent() {
+    if (useProtocolEngine) {
+        return protocolEngine.checkEngageEvent();
+    }
+    // Legacy: no unified event - callers must check brand-specific flags
+    return false;
+}
+
+const char* TractorCANDriver::getEngageLabel() const {
+    if (useProtocolEngine) {
+        return protocolEngine.getLastEngageLabel();
+    }
+    return "button";
 }
 
 bool TractorCANDriver::hasKeyaFunction() const {

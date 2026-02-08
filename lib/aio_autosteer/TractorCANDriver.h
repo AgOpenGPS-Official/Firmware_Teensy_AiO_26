@@ -13,6 +13,7 @@
 #include "EventLogger.h"
 #include "ConfigManager.h"
 #include "ConfigGlobals.h"
+#include "CANProtocolEngine.h"
 
 // Tractor brands enumeration (alphabetized except DISABLED)
 enum class TractorBrand : uint8_t {
@@ -32,6 +33,10 @@ class TractorCANDriver : public MotorDriverInterface {
 private:
     // Configuration
     CANSteerConfig config;
+
+    // Data-driven protocol engine (replaces brand-specific code when JSON config available)
+    CANProtocolEngine protocolEngine;
+    bool useProtocolEngine = false;
 
     // CAN bus pointers (assigned based on config)
     // Using void* to handle different template instantiations
@@ -185,8 +190,19 @@ public:
     // Lindner-specific methods
     bool isLindnerEngaged() const { return lindnerEngaged; }
 
+    // Unified CAN engage API (delegates to protocol engine when active)
+    bool checkEngageEvent();
+    const char* getEngageLabel() const;
+
     // Valve ready status methods (for engagement safety check)
-    bool isValveReady() const { return steerReady; }
+    bool isValveReady() const {
+        if (useProtocolEngine) return protocolEngine.isValveReady();
+        return steerReady;
+    }
+    bool isValveDataReceived() const {
+        if (useProtocolEngine) return protocolEngine.isValveDataReceived();
+        return steerReady;  // Legacy: steerReady implies data received
+    }
     uint32_t getTimeSinceLastValveReady() const {
         return steerReady ? 0 : (millis() - lastSteerReadyTime);
     }

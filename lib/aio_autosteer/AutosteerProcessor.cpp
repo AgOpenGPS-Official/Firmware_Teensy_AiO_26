@@ -248,78 +248,81 @@ void AutosteerProcessor::process() {
             static bool lastButtonReading = HIGH;
             bool buttonReading = adProcessor.isSteerSwitchOn() ? LOW : HIGH;  // Convert to active low
 
-            // Also check tractor-specific buttons if using TractorCANDriver
-            bool masseyEngagePressed = false;
-            bool fendtButtonPressed = false;
-            bool caseIHEngagePressed = false;
-            bool catMTEngagePressed = false;
-            bool claasEngagePressed = false;
-            bool jcbEngagePressed = false;
-            bool lindnerEngagePressed = false;
+            // Check CAN engage buttons via unified API or legacy per-brand flags
+            bool canEngagePressed = false;
+            const char* canEngageLabel = "button";
 
             if (motorPTR && motorPTR->getType() == MotorDriverType::TRACTOR_CAN) {
                 TractorCANDriver* tractorCAN = static_cast<TractorCANDriver*>(motorPTR);
 
-                // Check Massey button
-                bool currentMasseyEngage = tractorCAN->isEngageButtonPressed();
-                // Detect falling edge of Massey engage button (release)
-                if (!currentMasseyEngage && lastMasseyEngageState) {
-                    masseyEngagePressed = true;
+                // Unified path: protocol engine handles edge detection internally
+                if (tractorCAN->checkEngageEvent()) {
+                    canEngagePressed = true;
+                    canEngageLabel = tractorCAN->getEngageLabel();
                 }
-                lastMasseyEngageState = currentMasseyEngage;
 
-                // Check Fendt button
-                bool currentFendtButton = tractorCAN->isFendtButtonPressed();
-                // Detect falling edge of Fendt button (release)
-                if (!currentFendtButton && lastFendtButtonState) {
-                    fendtButtonPressed = true;
-                }
-                lastFendtButtonState = currentFendtButton;
+                // Legacy fallback: check brand-specific flags when protocol engine not active
+                if (!canEngagePressed) {
+                    // Check Massey button (falling edge)
+                    bool currentMasseyEngage = tractorCAN->isEngageButtonPressed();
+                    if (!currentMasseyEngage && lastMasseyEngageState) {
+                        canEngagePressed = true;
+                        canEngageLabel = "Massey K_Bus button";
+                    }
+                    lastMasseyEngageState = currentMasseyEngage;
 
-                // Check Case IH engage state
-                bool currentCaseIHEngage = tractorCAN->isCaseIHEngaged();
-                // Detect rising edge of Case IH engage (OFF to ON transition)
-                if (currentCaseIHEngage && !lastCaseIHEngageState) {
-                    caseIHEngagePressed = true;
-                }
-                lastCaseIHEngageState = currentCaseIHEngage;
+                    // Check Fendt button (falling edge)
+                    bool currentFendtButton = tractorCAN->isFendtButtonPressed();
+                    if (!currentFendtButton && lastFendtButtonState) {
+                        canEngagePressed = true;
+                        canEngageLabel = "Fendt armrest button";
+                    }
+                    lastFendtButtonState = currentFendtButton;
 
-                // Check CAT MT engage state
-                bool currentCATMTEngage = tractorCAN->isCATMTEngaged();
-                // Detect rising edge of CAT MT engage (OFF to ON transition)
-                if (currentCATMTEngage && !lastCATMTEngageState) {
-                    catMTEngagePressed = true;
-                }
-                lastCATMTEngageState = currentCATMTEngage;
+                    // Check Case IH (rising edge)
+                    bool currentCaseIHEngage = tractorCAN->isCaseIHEngaged();
+                    if (currentCaseIHEngage && !lastCaseIHEngageState) {
+                        canEngagePressed = true;
+                        canEngageLabel = "Case IH engage";
+                    }
+                    lastCaseIHEngageState = currentCaseIHEngage;
 
-                // Check CLAAS engage state
-                bool currentClaasEngage = tractorCAN->isClaasEngaged();
-                // Detect rising edge of CLAAS engage (OFF to ON transition)
-                if (currentClaasEngage && !lastClaasEngageState) {
-                    claasEngagePressed = true;
-                }
-                lastClaasEngageState = currentClaasEngage;
+                    // Check CAT MT (rising edge)
+                    bool currentCATMTEngage = tractorCAN->isCATMTEngaged();
+                    if (currentCATMTEngage && !lastCATMTEngageState) {
+                        canEngagePressed = true;
+                        canEngageLabel = "CAT MT engage";
+                    }
+                    lastCATMTEngageState = currentCATMTEngage;
 
-                // Check JCB engage state
-                bool currentJcbEngage = tractorCAN->isJcbEngaged();
-                // Detect rising edge of JCB engage (OFF to ON transition)
-                if (currentJcbEngage && !lastJcbEngageState) {
-                    jcbEngagePressed = true;
-                }
-                lastJcbEngageState = currentJcbEngage;
+                    // Check CLAAS (rising edge)
+                    bool currentClaasEngage = tractorCAN->isClaasEngaged();
+                    if (currentClaasEngage && !lastClaasEngageState) {
+                        canEngagePressed = true;
+                        canEngageLabel = "CLAAS engage";
+                    }
+                    lastClaasEngageState = currentClaasEngage;
 
-                // Check Lindner engage state
-                bool currentLindnerEngage = tractorCAN->isLindnerEngaged();
-                // Detect rising edge of Lindner engage (OFF to ON transition)
-                if (currentLindnerEngage && !lastLindnerEngageState) {
-                    lindnerEngagePressed = true;
+                    // Check JCB (rising edge)
+                    bool currentJcbEngage = tractorCAN->isJcbEngaged();
+                    if (currentJcbEngage && !lastJcbEngageState) {
+                        canEngagePressed = true;
+                        canEngageLabel = "JCB engage";
+                    }
+                    lastJcbEngageState = currentJcbEngage;
+
+                    // Check Lindner (rising edge)
+                    bool currentLindnerEngage = tractorCAN->isLindnerEngaged();
+                    if (currentLindnerEngage && !lastLindnerEngageState) {
+                        canEngagePressed = true;
+                        canEngageLabel = "Lindner engage";
+                    }
+                    lastLindnerEngageState = currentLindnerEngage;
                 }
-                lastLindnerEngageState = currentLindnerEngage;
             }
 
-            // Check if any button was pressed
-            if ((buttonReading == LOW && lastButtonReading == HIGH) || masseyEngagePressed ||
-                fendtButtonPressed || caseIHEngagePressed || catMTEngagePressed || claasEngagePressed || jcbEngagePressed || lindnerEngagePressed) {
+            // Check if any button was pressed (physical or CAN)
+            if ((buttonReading == LOW && lastButtonReading == HIGH) || canEngagePressed) {
 
                 // SAFETY CHECK: Verify motor/valve ready before engagement
                 // Only check for TractorCAN drivers (not PWM or Keya Serial)
@@ -358,16 +361,9 @@ void AutosteerProcessor::process() {
 
                 // Button was just pressed - toggle state
                 steerState = !steerState;
-                const char* buttonType = masseyEngagePressed ? "Massey K_Bus button" :
-                                        fendtButtonPressed ? "Fendt armrest button" :
-                                        caseIHEngagePressed ? "Case IH engage" :
-                                        catMTEngagePressed ? "CAT MT engage" :
-                                        claasEngagePressed ? "CLAAS engage" :
-                                        jcbEngagePressed ? "JCB engage" :
-                                        lindnerEngagePressed ? "Lindner engage" : "button";
                 LOG_INFO(EventSource::AUTOSTEER, "Autosteer %s via %s press",
                          steerState == 0 ? "ARMED" : "DISARMED",
-                         buttonType);
+                         canEngagePressed ? canEngageLabel : "button");
 
                 // Reset encoder count when autosteer is armed
                 if (steerState == 0 && EncoderProcessor::getInstance() && EncoderProcessor::getInstance()->isEnabled()) {
