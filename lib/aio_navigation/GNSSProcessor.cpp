@@ -22,12 +22,13 @@ GNSSProcessor::GNSSProcessor() : bufferIndex(0),
                                  checksumIndex(0),
                                  fieldCount(0),
                                  enableNoiseFilter(true),
+                                 lastGGALatitude(0.0),
+                                 lastGGALongitude(0.0),
                                  enableDebug(false),
                                  ubxParser(nullptr),
                                  udpPassthroughEnabled(false),
                                  processingPaused(false),
-                                 lastGGALatitude(0.0),
-                                 lastGGALongitude(0.0)
+                                 onPositionMessage(nullptr)
 {
 
     // Initialize data structures
@@ -508,14 +509,32 @@ bool GNSSProcessor::processMessage()
     {
         // Valid GPS message received
         // Note: lastUpdateTime is now set by individual message parsers
-        
+
         // Debug log to track hasDualHeading status after each message
         static uint32_t lastTraceTime = 0;
         if (millis() - lastTraceTime > 5000) {  // Log every 5 seconds
             lastTraceTime = millis();
-            LOG_DEBUG(EventSource::GNSS, "GPS State: hasDualHeading=%d, hasINS=%d, hasPosition=%d, fixQual=%d, msgMask=0x%02X", 
-                      gpsData.hasDualHeading, gpsData.hasINS, gpsData.hasPosition, 
+            LOG_DEBUG(EventSource::GNSS, "GPS State: hasDualHeading=%d, hasINS=%d, hasPosition=%d, fixQual=%d, msgMask=0x%02X",
+                      gpsData.hasDualHeading, gpsData.hasINS, gpsData.hasPosition,
                       gpsData.fixQuality, gpsData.messageTypeMask);
+        }
+
+        // Async callback for position-bearing messages
+        // This enables immediate PANDA/PAOGI transmission without waiting for scheduler
+        // Only trigger for messages that contain position data (not VTG or HPR)
+        if (onPositionMessage != nullptr) {
+            switch (type) {
+                case MSG_GGA:
+                case MSG_GNS:
+                case MSG_KSXT:
+                case MSG_INSPVAA:
+                case MSG_INSPVAXA:
+                    onPositionMessage();
+                    break;
+                default:
+                    // VTG, HPR, etc. - do not trigger callback
+                    break;
+            }
         }
     }
 

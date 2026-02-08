@@ -202,12 +202,24 @@ void EventLogger::loadConfig() {
     // Check if we have valid config in EEPROM
     uint8_t marker;
     EEPROM.get(EVENT_CONFIG_ADDR - 1, marker);
-    
+
+    Serial.printf("\r\n[EventLogger] Loading config from EEPROM (marker=0x%02X)\r\n", marker);
+
     if (marker == 0xEE) {  // Valid config marker
         EEPROM.get(EVENT_CONFIG_ADDR, config);
+        Serial.printf("[EventLogger] Loaded: enableSerial=%d, serialLevel=%d, enableUDP=%d, udpLevel=%d, rateLimit=%d\r\n",
+                      config.enableSerial, config.serialLevel, config.enableUDP, config.udpLevel, !config.disableRateLimit);
     } else {
         // Use defaults and save
+        Serial.println("[EventLogger] No valid config found, using defaults");
         saveConfig();
+    }
+
+    // Safety check: if enableSerial is somehow false, warn and enable it
+    if (!config.enableSerial) {
+        Serial.println("[EventLogger] WARNING: Serial was disabled in EEPROM! Enabling for this session.");
+        config.enableSerial = true;
+        // Don't save to EEPROM - let user decide if they want to keep it disabled
     }
 }
 

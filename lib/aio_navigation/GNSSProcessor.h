@@ -20,6 +20,9 @@ constexpr uint8_t GPS_SOURCE_ID = 0x78;     // 120 decimal - GPS source address 
 constexpr uint8_t GPS_PGN_DATA = 0xD6;      // 214 decimal - GPS data PGN
 constexpr uint8_t GPS_HELLO_REPLY = 0x78;   // 120 decimal - GPS hello reply
 
+// Callback type for position message notification
+typedef void (*PositionCallback)();
+
 // Forward declaration
 class UBX_Parser;
 
@@ -168,6 +171,9 @@ private:
     // Processing control
     bool processingPaused;
 
+    // Position callback for async notification
+    PositionCallback onPositionMessage;
+
     // Internal parsing methods
     void resetParser();
     bool validateChecksum();
@@ -261,6 +267,9 @@ public:
     void pauseProcessing() { processingPaused = true; }
     void resumeProcessing() { processingPaused = false; }
     bool isProcessingPaused() const { return processingPaused; }
+
+    // Position callback registration - called immediately when position message parsed
+    void setPositionCallback(PositionCallback cb) { onPositionMessage = cb; }
 };
 
 // Global instance following established pattern
