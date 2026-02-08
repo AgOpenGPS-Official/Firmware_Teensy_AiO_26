@@ -91,6 +91,7 @@ private:
 
     // Massey Ferguson V-Bus tracking
     bool masseyFergusonEngaged = false;  // Track MF V-Bus engage state
+    bool masseyKickoutDetected = false;  // Track MF kickout (manual steering while autosteer active)
 
     // Valve state tracking for detailed error messages
     bool valveDataReceived = false;     // Track if we're receiving valve data (0x0CAC1C13)
@@ -193,6 +194,8 @@ public:
 
     // Massey Ferguson-specific methods
     bool isMasseyFergusonEngaged() const { return masseyFergusonEngaged; }
+    bool isMasseyKickoutDetected() const { return masseyKickoutDetected; }
+    void resetMasseyKickoutDetected() { masseyKickoutDetected = false; }
 
     // Valve ready status methods (for engagement safety check)
     bool isValveReady() const { return steerReady; }

@@ -830,18 +830,34 @@ void TractorCANDriver::processValtraMessage(const CAN_message_t& msg) {
         int16_t estCurve = (msg.buf[1] << 8) | msg.buf[0];
 
         // Extract valve ready state from byte 2
-        bool valveReady = (msg.buf[2] != 0);
+        // Valid ready states: 20 (0x14) = System ready, 16 (0x10) = Correct position but not ready
+        // Any other value = not ready, including 0x50 (80) = Reset required (kickout!)
+        uint8_t valveStatus = msg.buf[2];
+        bool isReady = (valveStatus == 20 || valveStatus == 16);
 
-        if (valveReady) {
+        if (isReady) {
             if (!steerReady) {
-                LOG_INFO(EventSource::AUTOSTEER, "Valtra steering valve ready");
+                LOG_INFO(EventSource::AUTOSTEER, "Valtra steering valve ready (status: %d)", valveStatus);
             }
             steerReady = true;
             lastSteerReadyTime = millis();
+            masseyKickoutDetected = false;  // Reset kickout flag when ready again
         } else {
+            // Valve not ready - check if this is a kickout (transition from ready to not ready while steering)
+            // Only trigger kickout on the edge transition, not continuously while not ready
+            if (enabled && steerReady) {
+                // *** KICKOUT: Driver turned steering wheel while autosteer was active ***
+                // This is the transition from ready to not ready
+                LOG_WARNING(EventSource::AUTOSTEER, "MF V-Bus kickout detected (status: %d/0x%02X) - Manual steering detected",
+                           valveStatus, valveStatus);
+                enabled = false;  // Stop steering (will send byte 2 = 252 instead of 253)
+                masseyKickoutDetected = true;  // Set flag for AutosteerProcessor to send PGN 221
+            }
+
             // Valve data received but not ready - user needs to turn steering wheel
             if (steerReady) {
-                LOG_WARNING(EventSource::AUTOSTEER, "Valtra steering valve not ready - turn wheel to activate");
+                LOG_WARNING(EventSource::AUTOSTEER, "Valtra steering valve not ready (status: %d/0x%02X) - turn wheel to activate",
+                           valveStatus, valveStatus);
             }
             steerReady = false;
         }

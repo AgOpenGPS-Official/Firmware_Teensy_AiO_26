@@ -562,14 +562,35 @@ void AutosteerProcessor::process() {
             }
         }
     }
-    
+
     // Track when button/switch is pressed while in kickout
     static uint32_t kickoutButtonPressTime = 0;
     static bool kickoutButtonPressed = false;
-    
+
     // Process motor driver (for serial communication)
     motorDriver.process();
-    
+
+    // Check for MF V-Bus kickout (manual steering detection)
+    // This must be checked after motorDriver.process() since CAN messages are processed there
+    if (motorPTR && motorPTR->getType() == MotorDriverType::TRACTOR_CAN) {
+        TractorCANDriver* tractorCAN = static_cast<TractorCANDriver*>(motorPTR);
+
+        // Check if MF kickout was detected during CAN processing
+        if (tractorCAN->isMasseyKickoutDetected()) {
+            // Send PGN 221 to AgOpenGPS
+            MessageBuilder::sendHardwarePopup("Valtra/MF: Manual steering detected!", 3, 2);
+
+            // Disable autosteer
+            steerState = 1;  // Disarm
+            emergencyStop();
+
+            // Reset flag
+            tractorCAN->resetMasseyKickoutDetected();
+
+            LOG_WARNING(EventSource::AUTOSTEER, "MF KICKOUT: Manual steering detected - autosteer disabled");
+        }
+    }
+
     // Process kickout monitoring
     if (kickoutMonitor) {
         kickoutMonitor->process();
