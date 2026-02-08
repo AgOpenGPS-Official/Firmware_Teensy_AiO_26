@@ -3,6 +3,7 @@ name: Release Firmware
 on:
   release:
     types: [published]
+  workflow_dispatch:
 
 jobs:
   build-and-release:
@@ -25,9 +26,15 @@ jobs:
       - name: Build Teensy 4.1 firmware
         run: pio run -e teensy41
 
-      - name: Get version from tag
+      - name: Get version from tag or Version.h
         id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          else
+            VERSION=$(grep -oP 'FIRMWARE_VERSION "\K[^"]+' lib/aio_system/Version.h)
+            echo "VERSION=v${VERSION}" >> $GITHUB_OUTPUT
+          fi
 
       - name: Rename firmware with version
         run: |
