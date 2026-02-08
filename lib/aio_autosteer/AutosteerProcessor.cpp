@@ -550,7 +550,7 @@ void AutosteerProcessor::process() {
     // Process kickout monitoring
     if (kickoutMonitor) {
         kickoutMonitor->process();
-        
+
         // Check if kickout is active while steering is armed
         if (kickoutMonitor->hasKickout() && steerState == 0) {
             // Disarm steering - this will stop the motor
@@ -561,29 +561,29 @@ void AutosteerProcessor::process() {
             kickoutButtonPressed = false;
             // Don't clear kickout here - let KickoutMonitor auto-clear when conditions return to normal
         }
-        
-        // Grace period after kickout - allow button/switch to clear it
-        if (kickoutMonitor->hasKickout() && steerState == 0 && !kickoutButtonPressed &&
-            millis() - kickoutButtonPressTime < 5000) {  // 5 second grace period
-            // User pressed button/switch to re-arm during grace period - clear kickout
-            kickoutMonitor->clearKickout();
-            kickoutButtonPressed = true;
-            LOG_INFO(EventSource::AUTOSTEER, "KICKOUT: Cleared via button/switch during grace period");
-            
-            // Reset encoder count
-            if (EncoderProcessor::getInstance() && EncoderProcessor::getInstance()->isEnabled()) {
-                EncoderProcessor::getInstance()->resetPulseCount();
-                LOG_INFO(EventSource::AUTOSTEER, "Encoder count reset for new engagement");
-            }
+    }
+
+    // Grace period after kickout - allow button/switch to clear it
+    if (kickoutMonitor->hasKickout() && steerState == 0 && !kickoutButtonPressed &&
+        millis() - kickoutButtonPressTime < 5000) {  // 5 second grace period
+        // User pressed button/switch to re-arm during grace period - clear kickout
+        kickoutMonitor->clearKickout();
+        kickoutButtonPressed = true;
+        LOG_INFO(EventSource::AUTOSTEER, "KICKOUT: Cleared via button/switch during grace period");
+
+        // Reset encoder count
+        if (EncoderProcessor::getInstance() && EncoderProcessor::getInstance()->isEnabled()) {
+            EncoderProcessor::getInstance()->resetPulseCount();
+            LOG_INFO(EventSource::AUTOSTEER, "Encoder count reset for new engagement");
         }
-        
-            // Check for OSB re-engagement during kickout
+
+        // Check for OSB re-engagement during kickout
         // When in kickout (steerState=1) and guidance is active, check if user is trying to re-engage
         // The OSB doesn't change any bits, but we can detect repeated clicks by watching for
         // guidance going off then on again quickly
         static uint32_t lastGuidanceOffTime = 0;
         static bool waitingForGuidanceOn = false;
-        
+
         if (kickoutMonitor->hasKickout() && steerState == 1) {
             if (!guidanceActive && prevGuidanceStatus) {
                 // Guidance just went OFF - user might have clicked OSB
@@ -601,7 +601,7 @@ void AutosteerProcessor::process() {
                 kickoutMonitor->clearKickout();
                 steerState = 0;  // Re-arm
                 LOG_INFO(EventSource::AUTOSTEER, "KICKOUT: Cleared via OSB toggle");
-                
+
                 // Reset encoder count
                 if (EncoderProcessor::getInstance() && EncoderProcessor::getInstance()->isEnabled()) {
                     EncoderProcessor::getInstance()->resetPulseCount();
@@ -610,7 +610,7 @@ void AutosteerProcessor::process() {
             }
         }
     }
-    
+
     // Always update current angle reading (needed for PGN253 even when autosteer is off)
     // Get current steering angle - use VWAS if enabled and available
     if (configManager.getINSUseFusion() && wheelAngleFusionPtr && wheelAngleFusionPtr->isHealthy()) {

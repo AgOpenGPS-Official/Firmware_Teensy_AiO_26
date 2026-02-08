@@ -27,7 +27,8 @@ public:
         MOTOR_SLIP = 4,
         KEYA_SLIP = 5,
         KEYA_ERROR = 6,
-        JD_PWM_MOTION = 7
+        JD_PWM_MOTION = 7,
+        CAN_KICKOUT = 8  // Generic CAN kickout (e.g., MF V-Bus valve status)
     };
 
     KickoutMonitor();
@@ -101,6 +102,7 @@ private:
     bool checkCurrentKickout();
     bool checkMotorSlipOverCurrentKickout();
     bool checkJDPWMKickout();
+    bool checkCANKickout();  // Check CAN bus kickout (via TractorCANDriver)
 };
 
 #endif // KICKOUT_MONITOR_H

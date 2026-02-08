@@ -12,10 +12,15 @@
 #include <Arduino.h>
 #include "CANGlobals.h"
 
+// Forward declaration for error message sending (MessageBuilder is a class)
+class MessageBuilder;
+
 // Maximum limits for config arrays
 static const uint8_t MAX_ENGAGE_RULES = 16;
 static const uint8_t MAX_CONDITIONS_PER_RULE = 4;
 static const uint8_t MAX_FILTER_IDS = 16;
+static const uint8_t MAX_READY_VALUES = 8;
+static const uint8_t MAX_ERROR_MESSAGES = 16;
 
 // A single byte-level condition within an engage rule
 struct CANByteCondition {
@@ -66,6 +71,34 @@ struct CANSendConfig {
     bool configured;
 };
 
+// Configuration for kickout detection (driver manual intervention)
+struct CANKickoutConfig {
+    bool enabled = false;
+    uint32_t canId = 0;
+    uint8_t statusByte = 2;
+    uint8_t readyValues[MAX_READY_VALUES];
+    uint8_t readyValueCount = 0;
+    bool onlyWhenEngaged = true;
+    uint16_t hysteresisMs = 100;
+    bool configured = false;
+
+    bool isReady(uint8_t status) const {
+        for (uint8_t i = 0; i < readyValueCount; i++) {
+            if (status == readyValues[i]) return true;
+        }
+        return false;
+    }
+};
+
+// Configuration for error messages (PGN 221)
+struct CANErrorMessageConfig {
+    char key[24] = "";
+    char messageTemplate[64] = "";
+    uint8_t duration = 3;
+    uint8_t color = 1;  // 0=info, 1=warning, 2=error
+    bool configured = false;
+};
+
 class CANProtocolEngine {
 public:
     CANProtocolEngine() {}
@@ -106,6 +139,19 @@ public:
     // Is the engine configured and ready?
     bool isConfigured() const { return configured; }
 
+    // === Kickout Detection ===
+    bool isKickoutDetected() const { return kickoutDetected; }
+    void clearKickout() { kickoutDetected = false; }
+    const CANKickoutConfig& getKickoutConfig() const { return kickoutConfig; }
+
+    // === V-Bus Engage State ===
+    bool isVBUSSEngaged() const { return vBusEngaged; }
+    void setVBUSSEngaged(bool engaged) { vBusEngaged = engaged; }
+
+    // === Error Messages ===
+    void sendError(const char* errorKey, const char* extra = "");
+    const CANErrorMessageConfig* getErrorConfig(const char* key) const;
+
 private:
     // Parsed configuration
     CANReceiveConfig receiveConfig = {};
@@ -114,6 +160,9 @@ private:
     uint8_t engageRuleCount = 0;
     uint32_t filterIds[MAX_FILTER_IDS] = {};
     uint8_t filterCount = 0;
+    CANKickoutConfig kickoutConfig = {};
+    CANErrorMessageConfig errorMessages[MAX_ERROR_MESSAGES] = {};
+    uint8_t errorMessageCount = 0;
 
     // Runtime state
     bool configured = false;
@@ -123,10 +172,28 @@ private:
     uint32_t lastValveReadyTime = 0;
     char lastEngageLabel[48] = {};
 
+    // Kickout state
+    bool kickoutDetected = false;
+    bool lastReadyState = false;
+    uint32_t lastKickoutTime = 0;
+
+    // V-Bus engage state
+    bool vBusEngaged = false;
+    uint32_t vBusEngageTimeout = 0;
+
     // Internal helpers
     void processValveMessage(const CAN_message_t& msg);
     void processEngageRules(const CAN_message_t& msg);
+    void processKickoutDetection(const CAN_message_t& msg, bool autosteerActive);
     void writeCANMessage(uint8_t busNum, const CAN_message_t& msg);
+    const char* getBrandName() const { return brandName; }
+    void setBrandName(const char* name) {
+        strncpy(brandName, name, sizeof(brandName) - 1);
+        brandName[sizeof(brandName) - 1] = '\0';
+    }
+
+    // Brand name for error messages
+    char brandName[32] = "Unknown";
 };
 
 #endif // CAN_PROTOCOL_ENGINE_H

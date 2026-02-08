@@ -97,7 +97,7 @@ uint8_t canConfigParseEngageRules(const JsonArray& steerArray,
         if (count >= maxRules) break;
 
         CANEngageRule& rule = rules[count];
-        memset(&rule, 0, sizeof(CANEngageRule));
+        rule = {};  // Zero-initialize
 
         // Parse CAN ID
         const char* canIdStr = steerObj["canFilterID"];
@@ -116,7 +116,7 @@ uint8_t canConfigParseEngageRules(const JsonArray& steerArray,
         rule.useFallingEdge = (edgeType && strcmp(edgeType, "falling") == 0);
 
         // Check for multi-byte conditions array (new format)
-        if (steerObj.containsKey("conditions")) {
+        if (!steerObj["conditions"].isNull()) {
             JsonArray conditions = steerObj["conditions"];
             rule.conditionCount = 0;
             for (JsonObject cond : conditions) {
@@ -148,7 +148,7 @@ uint8_t canConfigParseEngageRules(const JsonArray& steerArray,
 }
 
 bool canConfigParseReceiveConfig(const JsonObject& canConfig, CANReceiveConfig& config) {
-    memset(&config, 0, sizeof(CANReceiveConfig));
+    config = {};  // Zero-initialize
 
     // VReceiveCurve is the CAN ID we listen on for valve/curve data
     const char* receiveIdStr = canConfig["VReceiveCurve"];
@@ -177,7 +177,7 @@ bool canConfigParseReceiveConfig(const JsonObject& canConfig, CANReceiveConfig& 
     }
 
     // Parse valve state byte position
-    if (canConfig.containsKey("ValveState")) {
+    if (!canConfig["ValveState"].isNull()) {
         config.valveStateBytePos = canConfig["ValveState"] | 2;
     } else {
         config.valveStateBytePos = 2;  // Default: byte 2
@@ -188,7 +188,7 @@ bool canConfigParseReceiveConfig(const JsonObject& canConfig, CANReceiveConfig& 
 }
 
 bool canConfigParseSendConfig(const JsonObject& canConfig, CANSendConfig& config) {
-    memset(&config, 0, sizeof(CANSendConfig));
+    config = {};  // Zero-initialize
 
     // VSendCurve is the CAN ID we send steering commands to
     const char* sendIdStr = canConfig["VSendCurve"];
@@ -262,4 +262,93 @@ bool canConfigParseSendConfig(const JsonObject& canConfig, CANSendConfig& config
 
     config.configured = true;
     return true;
+}
+
+// Parse kickout detection configuration
+bool canConfigParseKickoutConfig(const JsonObject& kickoutObj, CANKickoutConfig& config) {
+    config = {};  // Zero-initialize (struct has default member initializers)
+
+    // Check if enabled
+    config.enabled = kickoutObj["enabled"] | false;
+    if (!config.enabled) return false;
+
+    // Parse CAN ID
+    const char* canIdStr = kickoutObj["valveStatusMessage"]["canId"];
+    if (!canIdStr) return false;
+    config.canId = CANConfigParser::parseHexString(canIdStr);
+
+    // Parse status byte position
+    config.statusByte = kickoutObj["valveStatusMessage"]["statusByte"] | 2;
+
+    // Parse ready values array
+    JsonArray readyVals = kickoutObj["valveStatusMessage"]["readyValues"];
+    if (readyVals.isNull()) return false;
+
+    config.readyValueCount = 0;
+    for (uint8_t v : readyVals) {
+        if (config.readyValueCount < MAX_READY_VALUES) {
+            config.readyValues[config.readyValueCount++] = v;
+        }
+    }
+
+    // Parse other options
+    config.onlyWhenEngaged = kickoutObj["onlyWhenEngaged"] | true;
+    config.hysteresisMs = kickoutObj["hysteresisMs"] | 100;
+
+    config.configured = true;
+    return true;
+}
+
+// Parse error messages configuration
+uint8_t canConfigParseErrorMessages(const JsonObject& errorObj, CANErrorMessageConfig* configs, uint8_t maxCount) {
+    uint8_t count = 0;
+
+    // Get the messages object (it's a JsonObject, not JsonArray)
+    JsonObject msgs = errorObj["messages"];
+    if (msgs.isNull()) return 0;
+
+    // Iterate over the members of the messages object
+    // Each key is the error identifier (e.g., "kickout", "valveNotReady")
+    for (JsonPair kv : msgs) {
+        if (count >= maxCount) break;
+
+        CANErrorMessageConfig& emc = configs[count];
+        // Zero-initialize without memset (struct has non-trivial members due to in-class initialization)
+        emc.key[0] = '\0';
+        emc.messageTemplate[0] = '\0';
+        emc.duration = 3;
+        emc.color = 1;
+        emc.configured = false;
+
+        // Get the object for this error message
+        JsonObject msgObj = kv.value().as<JsonObject>();
+        if (!msgObj.isNull()) {
+            // Set the key from the JSON member name
+            const char* keyName = kv.key().c_str();
+            strncpy(emc.key, keyName, sizeof(emc.key) - 1);
+            emc.key[sizeof(emc.key) - 1] = '\0';
+
+            // Parse message properties
+            if (!msgObj["message"].isNull()) {
+                const char* msg = msgObj["message"];
+                if (msg) {
+                    strncpy(emc.messageTemplate, msg, sizeof(emc.messageTemplate) - 1);
+                    emc.messageTemplate[sizeof(emc.messageTemplate) - 1] = '\0';
+                }
+            }
+
+            if (!msgObj["duration"].isNull()) {
+                emc.duration = msgObj["duration"] | 3;
+            }
+
+            if (!msgObj["color"].isNull()) {
+                emc.color = msgObj["color"] | 1;
+            }
+
+            emc.configured = true;
+            count++;
+        }
+    }
+
+    return count;
 }

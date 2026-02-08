@@ -194,6 +194,15 @@ void TractorCANDriver::processIncomingMessages() {
                 } else if (protocolEngine.isValveDataReceived()) {
                     steerReady = false;
                 }
+
+                // Check for kickout detection
+                if (protocolEngine.isKickoutDetected() && enabled) {
+                    // Kickout detected - disable steering immediately
+                    enabled = false;
+                    targetPWM = 0;
+                    commandedRPM = 0.0f;
+                    LOG_WARNING(EventSource::AUTOSTEER, "TractorCAN kickout detected - steering disabled");
+                }
             } else {
                 // Legacy: process based on brand
                 switch (static_cast<TractorBrand>(config.brand)) {
@@ -1071,3 +1080,5 @@ bool TractorCANDriver::hasKeyaFunction() const {
             (config.can2Function & static_cast<uint8_t>(CANFunction::KEYA)) ||
             (config.can3Function & static_cast<uint8_t>(CANFunction::KEYA)));
 }
+
+// === Note: Kickout detection methods are defined inline in TractorCANDriver.h ===

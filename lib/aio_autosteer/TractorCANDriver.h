@@ -210,6 +210,34 @@ public:
     // Heartbeat validity (for Keya/GENERIC brand)
     bool isHeartbeatValid() const { return heartbeatValid; }
 
+    // === Kickout Detection (via protocol engine) ===
+    bool isKickoutDetected() const {
+        if (useProtocolEngine) {
+            return protocolEngine.isKickoutDetected();
+        }
+        // Legacy: no kickout detection
+        return false;
+    }
+    void resetKickoutDetected() {
+        if (useProtocolEngine) {
+            protocolEngine.clearKickout();
+        }
+    }
+
+    // === V-Bus Engage State (via protocol engine) ===
+    bool isVBUSSEngaged() const {
+        if (useProtocolEngine) {
+            return protocolEngine.isVBUSSEngaged();
+        }
+        // Legacy: no V-Bus engage state
+        return false;
+    }
+    void setVBUSSEngaged(bool engaged) {
+        if (useProtocolEngine) {
+            protocolEngine.setVBUSSEngaged(engaged);
+        }
+    }
+
     // Brand identification
     TractorBrand getCurrentBrand() const { return static_cast<TractorBrand>(config.brand); }
 };

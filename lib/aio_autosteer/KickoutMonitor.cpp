@@ -12,6 +12,7 @@
 #include "EventLogger.h"
 #include "TurnSensorTypes.h"
 #include "KeyaCANDriver.h"
+#include "TractorCANDriver.h"  // For CAN kickout detection
 
 // External global objects
 extern ConfigManager configManager;
@@ -225,10 +226,24 @@ void KickoutMonitor::process() {
                 kickoutReason = MOTOR_SLIP;
             }
             kickoutTime = millis();
-            
+
             LOG_WARNING(EventSource::AUTOSTEER, "KICKOUT: %s", getReasonString());
-            
+
             // Motor already knows about its own slip condition
+        }
+        else if (motorType == MotorDriverType::TRACTOR_CAN && checkCANKickout()) {
+            // Generic CAN kickout detection (via JSON config, e.g., MF V-Bus valve status)
+            kickoutActive = true;
+            kickoutReason = CAN_KICKOUT;
+            kickoutTime = millis();
+
+            LOG_WARNING(EventSource::AUTOSTEER, "KICKOUT: %s", getReasonString());
+
+            // Notify TractorCAN driver to reset its kickout flag
+            TractorCANDriver* tractorCAN = static_cast<TractorCANDriver*>(motorDriver);
+            tractorCAN->resetKickoutDetected();
+
+            // No need to call handleKickout - CAN kickout is already handled by protocol engine
         }
     } else {
         // Currently in kickout - check if conditions have returned to normal
@@ -267,7 +282,14 @@ void KickoutMonitor::process() {
                     conditionsNormal = false;
                 }
                 break;
-                
+
+            case CAN_KICKOUT:
+                // CAN kickout clears when protocol engine reports no kickout
+                if (motorType == MotorDriverType::TRACTOR_CAN && checkCANKickout()) {
+                    conditionsNormal = false;
+                }
+                break;
+
             default:
                 break;
         }
@@ -408,8 +430,8 @@ bool KickoutMonitor::checkMotorSlipOverCurrentKickout() {
         }
     }
     else if (motorType == MotorDriverType::TRACTOR_CAN) {
-        // TRACTOR_CAN handles its own internal kickout
-        // No slip detection needed here
+        // TRACTOR_CAN kickout is handled by checkCANKickout() via JSON config
+        // No slip detection here - CAN kickout uses valve status messages
         return false;
     }
 
@@ -423,7 +445,7 @@ bool KickoutMonitor::checkJDPWMKickout() {
     // In JD PWM mode, the motion value is already sent as pressure data
     // AgOpenGPS will handle the kickout through its pressure threshold
     // This function now only exists for logging purposes
-    
+
     if (configMgr->getJDPWMEnabled()) {
         // Debug output
         static uint32_t lastDebugTime = 0;
@@ -434,9 +456,19 @@ bool KickoutMonitor::checkJDPWMKickout() {
             lastDebugTime = now;
         }
     }
-    
+
     // Always return false - let pressure kickout handle it
     return false;
+}
+
+bool KickoutMonitor::checkCANKickout() {
+    // Check if motor driver is TractorCAN and has kickout detection
+    if (!motorDriver || motorDriver->getType() != MotorDriverType::TRACTOR_CAN) {
+        return false;
+    }
+
+    TractorCANDriver* tractorCAN = static_cast<TractorCANDriver*>(motorDriver);
+    return tractorCAN->isKickoutDetected();
 }
 
 void KickoutMonitor::clearKickout() {
@@ -470,6 +502,7 @@ const char* KickoutMonitor::getReasonString() const {
         case KEYA_SLIP: return "Keya Motor Slip";
         case KEYA_ERROR: return "Keya Motor Error";
         case JD_PWM_MOTION: return "JD PWM Motion Detected";
+        case CAN_KICKOUT: return "CAN Kickout (Manual Steering)";
         default: return "Unknown";
     }
 }
