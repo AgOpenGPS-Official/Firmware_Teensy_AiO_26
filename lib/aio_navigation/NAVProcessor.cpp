@@ -10,7 +10,7 @@
 #include <cstring>
 #include "EventLogger.h"
 #include "ConfigManager.h"
-#include "MessageBuilder.h"
+#include "NMEAMessageBuilder.h"
 
 // External processor instances from main.cpp
 extern GNSSProcessor gnssProcessor;

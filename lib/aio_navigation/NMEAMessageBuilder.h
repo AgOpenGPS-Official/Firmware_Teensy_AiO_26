@@ -4,8 +4,8 @@
 // You should have received a copy of the GNU General Public License along with Firmware_Teensy_AiO-New-Dawn. If not, see <https://www.gnu.org/licenses/>.
 // Like most Arduino code, portions of this are based on other open source Arduino code with a compatiable license.
 
-#ifndef MESSAGE_BUILDER_H
-#define MESSAGE_BUILDER_H
+#ifndef NMEA_MESSAGE_BUILDER_H
+#define NMEA_MESSAGE_BUILDER_H
 
 #include <cstdint>
 #include <cstring>
@@ -153,4 +153,4 @@ public:
     }
 };
 
-#endif // MESSAGE_BUILDER_H
+#endif // NMEA_MESSAGE_BUILDER_H
