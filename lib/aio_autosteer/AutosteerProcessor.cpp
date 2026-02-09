@@ -561,20 +561,20 @@ void AutosteerProcessor::process() {
             kickoutButtonPressed = false;
             // Don't clear kickout here - let KickoutMonitor auto-clear when conditions return to normal
         }
-    }
 
-    // Grace period after kickout - allow button/switch to clear it
-    if (kickoutMonitor->hasKickout() && steerState == 0 && !kickoutButtonPressed &&
-        millis() - kickoutButtonPressTime < 5000) {  // 5 second grace period
-        // User pressed button/switch to re-arm during grace period - clear kickout
-        kickoutMonitor->clearKickout();
-        kickoutButtonPressed = true;
-        LOG_INFO(EventSource::AUTOSTEER, "KICKOUT: Cleared via button/switch during grace period");
+        // Grace period after kickout - allow button/switch to clear it
+        if (kickoutMonitor->hasKickout() && steerState == 0 && !kickoutButtonPressed &&
+            millis() - kickoutButtonPressTime < 5000) {  // 5 second grace period
+            // User pressed button/switch to re-arm during grace period - clear kickout
+            kickoutMonitor->clearKickout();
+            kickoutButtonPressed = true;
+            LOG_INFO(EventSource::AUTOSTEER, "KICKOUT: Cleared via button/switch during grace period");
 
-        // Reset encoder count
-        if (EncoderProcessor::getInstance() && EncoderProcessor::getInstance()->isEnabled()) {
-            EncoderProcessor::getInstance()->resetPulseCount();
-            LOG_INFO(EventSource::AUTOSTEER, "Encoder count reset for new engagement");
+            // Reset encoder count
+            if (EncoderProcessor::getInstance() && EncoderProcessor::getInstance()->isEnabled()) {
+                EncoderProcessor::getInstance()->resetPulseCount();
+                LOG_INFO(EventSource::AUTOSTEER, "Encoder count reset for new engagement");
+            }
         }
 
         // Check for OSB re-engagement during kickout

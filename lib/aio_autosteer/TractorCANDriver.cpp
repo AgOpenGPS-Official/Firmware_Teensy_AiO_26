@@ -185,6 +185,7 @@ void TractorCANDriver::processIncomingMessages() {
                 processKeyaMessage(msg);
             } else if (useProtocolEngine) {
                 // Data-driven path: protocol engine handles all brands
+                protocolEngine.setAutosteerActive(enabled);
                 protocolEngine.processIncomingMessage(msg);
 
                 // Sync engine valve state back to TractorCANDriver state

@@ -225,16 +225,16 @@ public:
     }
 
     // === V-Bus Engage State (via protocol engine) ===
-    bool isVBUSSEngaged() const {
+    bool isVBusEngaged() const {
         if (useProtocolEngine) {
-            return protocolEngine.isVBUSSEngaged();
+            return protocolEngine.isVBusEngaged();
         }
         // Legacy: no V-Bus engage state
         return false;
     }
-    void setVBUSSEngaged(bool engaged) {
+    void setVBusEngaged(bool engaged) {
         if (useProtocolEngine) {
-            protocolEngine.setVBUSSEngaged(engaged);
+            protocolEngine.setVBusEngaged(engaged);
         }
     }
 

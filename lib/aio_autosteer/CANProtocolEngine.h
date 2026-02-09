@@ -145,8 +145,11 @@ public:
     const CANKickoutConfig& getKickoutConfig() const { return kickoutConfig; }
 
     // === V-Bus Engage State ===
-    bool isVBUSSEngaged() const { return vBusEngaged; }
-    void setVBUSSEngaged(bool engaged) { vBusEngaged = engaged; }
+    bool isVBusEngaged() const { return vBusEngaged; }
+    void setVBusEngaged(bool engaged) { vBusEngaged = engaged; }
+
+    // === Autosteer Active State (set by TractorCANDriver) ===
+    void setAutosteerActive(bool active) { autosteerActive = active; }
 
     // === Error Messages ===
     void sendError(const char* errorKey, const char* extra = "");
@@ -180,6 +183,9 @@ private:
     // V-Bus engage state
     bool vBusEngaged = false;
     uint32_t vBusEngageTimeout = 0;
+
+    // Autosteer active state (set by TractorCANDriver, used for kickout detection)
+    bool autosteerActive = false;
 
     // Internal helpers
     void processValveMessage(const CAN_message_t& msg);

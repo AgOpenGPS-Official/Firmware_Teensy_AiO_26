@@ -203,9 +203,7 @@ bool CANProtocolEngine::loadConfig(const char* json, size_t len, uint8_t brandId
         }
     }
 
-    // Parse engage rules from all models' steer arrays
-    engageRuleCount = 0;
-
+    // Parse engage rules from all models' steer arrays (append to any V-Bus engage rules already parsed)
     // Collect engage rules from the selected model, or all models if none selected
     if (!models.isNull()) {
         for (JsonObject model : models) {
@@ -259,9 +257,9 @@ void CANProtocolEngine::processIncomingMessage(const CAN_message_t& msg) {
     processValveMessage(msg);
     processEngageRules(msg);
 
-    // Process kickout detection (valve message is also checked here for kickout)
+    // Process kickout detection
     if (kickoutConfig.configured) {
-        processKickoutDetection(msg, vBusEngaged);  // Check if V-Bus engaged
+        processKickoutDetection(msg, autosteerActive);
     }
 }
 
@@ -437,44 +435,34 @@ void CANProtocolEngine::processKickoutDetection(const CAN_message_t& msg, bool a
 
 // === Error Messages ===
 void CANProtocolEngine::sendError(const char* errorKey, const char* extra) {
-    const CANErrorMessageConfig* config = getErrorConfig(errorKey);
-    if (config && config->configured) {
-        // Build message with template replacement
-        char message[64];
-        strncpy(message, config->messageTemplate, sizeof(message) - 1);
-        message[sizeof(message) - 1] = '\0';
-
-        // Replace {brand} placeholder
-        const char* brandPtr = strstr(message, "{brand}");
+    const CANErrorMessageConfig* cfg = getErrorConfig(errorKey);
+    if (cfg && cfg->configured) {
+        // First pass: replace {brand}
+        char temp[64];
+        const char* tmpl = cfg->messageTemplate;
+        const char* brandPtr = strstr(tmpl, "{brand}");
         if (brandPtr) {
-            char result[64];
-            int prefixLen = brandPtr - message;
-            strncpy(result, message, prefixLen);
-            strncpy(result + prefixLen, brandName, sizeof(result) - prefixLen - 1);
-            strcat(result, brandPtr + 7);  // Skip "{brand}"
-            strncpy(message, result, sizeof(message) - 1);
+            int prefixLen = brandPtr - tmpl;
+            snprintf(temp, sizeof(temp), "%.*s%s%s", prefixLen, tmpl, brandName, brandPtr + 7);
+        } else {
+            snprintf(temp, sizeof(temp), "%s", tmpl);
         }
 
-        // Replace {extra} placeholder
-        const char* extraPtr = strstr(message, "{extra}");
+        // Second pass: replace {extra}
+        char message[64];
+        const char* extraPtr = strstr(temp, "{extra}");
         if (extraPtr && extra && extra[0] != '\0') {
-            char result[64];
-            int prefixLen = extraPtr - message;
-            strncpy(result, message, prefixLen);
-            strncpy(result + prefixLen, extra, sizeof(result) - prefixLen - 1);
-            strcat(result, extraPtr + 7);  // Skip "{extra}"
-            strncpy(message, result, sizeof(message) - 1);
+            int prefixLen = extraPtr - temp;
+            snprintf(message, sizeof(message), "%.*s%s%s", prefixLen, temp, extra, extraPtr + 7);
         } else if (extraPtr) {
-            // Remove {extra} if no extra provided
-            char result[64];
-            int prefixLen = extraPtr - message;
-            strncpy(result, message, prefixLen);
-            result[prefixLen] = '\0';
-            strcat(result, extraPtr + 7);
-            strncpy(message, result, sizeof(message) - 1);
+            // Remove {extra} placeholder
+            int prefixLen = extraPtr - temp;
+            snprintf(message, sizeof(message), "%.*s%s", prefixLen, temp, extraPtr + 7);
+        } else {
+            snprintf(message, sizeof(message), "%s", temp);
         }
 
-        MessageBuilder::sendHardwarePopup(message, config->duration, config->color);
+        MessageBuilder::sendHardwarePopup(message, cfg->duration, cfg->color);
     } else {
         // Fallback if error key not found
         if (extra && extra[0] != '\0') {

@@ -2,7 +2,7 @@
   "version": "3.0",
   "metadata": {
     "description": "CAN bus configuration for Massey Ferguson 7600 Series with V-Bus auto-engage and kickout detection",
-    "lastUpdated": "2025-02-08",
+    "lastUpdated": "2026-02-08",
     "schema": "v3.0 - Added kickoutDetection and errorMessages support"
   },
 
