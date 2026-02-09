@@ -8,7 +8,7 @@
 #define VERSION_H
 
 // AiO v26 firmware version
-#define FIRMWARE_VERSION "26.3" //
+#define FIRMWARE_VERSION "26.4" //
 
 // Teensy board type for OTA identification
 #define TEENSY_BOARD_TYPE "Teensy41"
