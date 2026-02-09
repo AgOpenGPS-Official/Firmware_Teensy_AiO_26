@@ -35,6 +35,8 @@ public:
     //   parseEngageRules(JsonArray&, CANEngageRule*, uint8_t) -> uint8_t
     //   parseReceiveConfig(JsonObject&, CANReceiveConfig&) -> bool
     //   parseSendConfig(JsonObject&, CANSendConfig&) -> bool
+    //   parseKickoutConfig(JsonObject&, CANKickoutConfig&) -> bool
+    //   parseErrorMessages(JsonObject&, CANErrorMessageConfig*, uint8_t) -> uint8_t
 };
 
 #endif // CAN_CONFIG_PARSER_H

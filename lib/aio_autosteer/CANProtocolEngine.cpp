@@ -8,13 +8,17 @@
 #include "CANProtocolEngine.h"
 #include "CANConfigParser.h"
 #include "EventLogger.h"
+#include "MessageBuilder.h"
 #include <ArduinoJson.h>
+#include <cstring>
 
 // Free functions defined in CANConfigParser.cpp (ArduinoJson types kept out of header)
 extern uint8_t canConfigParseEngageRules(const JsonArray& steerArray,
                                           CANEngageRule* rules, uint8_t maxRules);
 extern bool canConfigParseReceiveConfig(const JsonObject& canConfig, CANReceiveConfig& config);
 extern bool canConfigParseSendConfig(const JsonObject& canConfig, CANSendConfig& config);
+extern bool canConfigParseKickoutConfig(const JsonObject& kickoutObj, CANKickoutConfig& config);
+extern bool canConfigParseErrorMessages(const JsonObject& errorObj, CANErrorMessageConfig* configs, uint8_t maxCount);
 
 bool CANProtocolEngine::loadConfig(const char* json, size_t len, uint8_t brandId, uint8_t modelIndex) {
     configured = false;
@@ -56,6 +60,7 @@ bool CANProtocolEngine::loadConfig(const char* json, size_t len, uint8_t brandId
     }
 
     const char* brandName = brandObj["name"] | "Unknown";
+    setBrandName(brandName);
     LOG_INFO(EventSource::AUTOSTEER, "CANProtocolEngine: Loading config for %s (id=%d)", brandName, brandId);
 
     // Get canConfig - can be at brand level or model level
@@ -71,7 +76,7 @@ bool CANProtocolEngine::loadConfig(const char* json, size_t len, uint8_t brandId
         selectedModel = models[idx];
 
         // Check if model has its own canConfig (overrides brand-level)
-        if (selectedModel.containsKey("canConfig")) {
+        if (!selectedModel["canConfig"].isNull()) {
             canConfigObj = selectedModel["canConfig"];
             hasModelConfig = true;
             LOG_INFO(EventSource::AUTOSTEER, "CANProtocolEngine: Using model-level canConfig for '%s'",
@@ -81,7 +86,7 @@ bool CANProtocolEngine::loadConfig(const char* json, size_t len, uint8_t brandId
 
     // Fall back to brand-level canConfig
     if (!hasModelConfig) {
-        if (brandObj.containsKey("canConfig")) {
+        if (!brandObj["canConfig"].isNull()) {
             canConfigObj = brandObj["canConfig"];
         } else {
             LOG_WARNING(EventSource::AUTOSTEER, "CANProtocolEngine: No canConfig found for brand %d", brandId);
@@ -110,9 +115,95 @@ bool CANProtocolEngine::loadConfig(const char* json, size_t len, uint8_t brandId
                  sendConfig.curveLoBytePos, sendConfig.curveHiBytePos, sendConfig.curveMod);
     }
 
-    // Parse engage rules from all models' steer arrays
-    engageRuleCount = 0;
+    // Parse kickout detection configuration (from brand level, can also be at model level)
+    JsonObject kickoutObj = canConfigObj["kickoutDetection"];
+    if (kickoutObj.isNull() && hasModelConfig) {
+        // Try model-level kickout config
+        kickoutObj = selectedModel["kickoutDetection"];
+    }
+    if (!kickoutObj.isNull() && canConfigParseKickoutConfig(kickoutObj, kickoutConfig)) {
+        LOG_INFO(EventSource::AUTOSTEER, "CANProtocolEngine: Kickout detection enabled - CAN 0x%08X, byte %d",
+                 kickoutConfig.canId, kickoutConfig.statusByte);
+    }
 
+    // Parse error messages configuration (from brand level)
+    JsonObject errorObj = brandObj["errorMessages"];
+    if (errorObj.isNull()) {
+        // Try canConfig level
+        errorObj = canConfigObj["errorMessages"];
+    }
+    if (!errorObj.isNull()) {
+        errorMessageCount = canConfigParseErrorMessages(errorObj, errorMessages, MAX_ERROR_MESSAGES);
+        LOG_INFO(EventSource::AUTOSTEER, "CANProtocolEngine: %d error messages loaded", errorMessageCount);
+    }
+
+    // Parse V-Bus engage rules from selected model (for MF 7600 etc)
+    if (hasModelConfig && !selectedModel["vBusEngage"].isNull()) {
+        JsonObject vBusEngageObj = selectedModel["vBusEngage"];
+        if (vBusEngageObj["enabled"] | false) {
+            JsonArray rules = vBusEngageObj["rules"];
+            if (!rules.isNull()) {
+                for (JsonObject ruleJson : rules) {
+                    if (engageRuleCount >= MAX_ENGAGE_RULES) break;
+
+                    CANEngageRule& rule = engageRules[engageRuleCount];
+                    rule = {};  // Zero-initialize (safer than memset for structs with bool members)
+
+                    // Parse CAN ID
+                    const char* canIdStr = ruleJson["canId"];
+                    if (canIdStr) {
+                        rule.canId = CANConfigParser::parseHexString(canIdStr);
+                        rule.isExtendedId = (rule.canId > 0x7FF);
+
+                        // Parse label
+                        const char* label = ruleJson["name"];
+                        if (label) {
+                            strncpy(rule.label, label, sizeof(rule.label) - 1);
+                        }
+
+                        // Parse multi-byte conditions
+                        JsonArray bytes = ruleJson["matchCondition"]["bytes"];
+                        if (!bytes.isNull()) {
+                            rule.conditionCount = 0;
+                            for (JsonObject byteJson : bytes) {
+                                if (rule.conditionCount >= MAX_CONDITIONS_PER_RULE) break;
+                                CANByteCondition& bc = rule.conditions[rule.conditionCount];
+                                bc.byteIndex = byteJson["index"] | 0;
+                                bc.mask = 0xFF;  // Multi-byte uses exact match
+                                bc.expectedValue = byteJson["value"] | 0;
+                                rule.conditionCount++;
+                            }
+                        }
+
+                        // Rising edge for engage
+                        rule.useFallingEdge = false;
+
+                        // Add to filter list
+                        if (filterCount < MAX_FILTER_IDS) {
+                            bool exists = false;
+                            for (uint8_t f = 0; f < filterCount; f++) {
+                                if (filterIds[f] == rule.canId) {
+                                    exists = true;
+                                    break;
+                                }
+                            }
+                            if (!exists) {
+                                filterIds[filterCount++] = rule.canId;
+                            }
+                        }
+
+                        LOG_INFO(EventSource::AUTOSTEER,
+                                 "  V-Bus Engage Rule: CAN 0x%08X, %d bytes, \"%s\"",
+                                 rule.canId, rule.conditionCount, rule.label);
+
+                        engageRuleCount++;
+                    }
+                }
+            }
+        }
+    }
+
+    // Parse engage rules from all models' steer arrays (append to any V-Bus engage rules already parsed)
     // Collect engage rules from the selected model, or all models if none selected
     if (!models.isNull()) {
         for (JsonObject model : models) {
@@ -165,6 +256,11 @@ void CANProtocolEngine::processIncomingMessage(const CAN_message_t& msg) {
 
     processValveMessage(msg);
     processEngageRules(msg);
+
+    // Process kickout detection
+    if (kickoutConfig.configured) {
+        processKickoutDetection(msg, autosteerActive);
+    }
 }
 
 void CANProtocolEngine::processValveMessage(const CAN_message_t& msg) {
@@ -234,9 +330,17 @@ void CANProtocolEngine::processEngageRules(const CAN_message_t& msg) {
             // Rising edge: was false, now true
             if (!rule.previousState && rule.currentState) {
                 rule.eventTriggered = true;
-                LOG_INFO(EventSource::AUTOSTEER, "CANProtocolEngine: Engage event (rising) - %s", rule.label);
+                vBusEngaged = true;  // Set V-Bus engaged state
+                vBusEngageTimeout = millis() + 5000;  // 5 second timeout
+                LOG_INFO(EventSource::AUTOSTEER, "CANProtocolEngine: Engage event (rising) - %s - V-Bus ENGAGED", rule.label);
             }
         }
+    }
+
+    // Check for V-Bus engage timeout (5 seconds without re-trigger)
+    if (vBusEngaged && millis() > vBusEngageTimeout) {
+        vBusEngaged = false;
+        LOG_INFO(EventSource::AUTOSTEER, "CANProtocolEngine: V-Bus engage timeout - disengaged");
     }
 }
 
@@ -293,4 +397,85 @@ void CANProtocolEngine::writeCANMessage(uint8_t busNum, const CAN_message_t& msg
         case 2: globalCAN2.write(msg); break;
         case 3: globalCAN3.write(msg); break;
     }
+}
+
+// === Kickout Detection ===
+void CANProtocolEngine::processKickoutDetection(const CAN_message_t& msg, bool autosteerActive) {
+    if (!kickoutConfig.configured) return;
+
+    // Check if this is the kickout detection message
+    if (msg.id != kickoutConfig.canId) return;
+
+    // Only check when autosteer is active (if configured)
+    if (kickoutConfig.onlyWhenEngaged && !autosteerActive) return;
+
+    // Check hysteresis
+    if (millis() - lastKickoutTime < kickoutConfig.hysteresisMs) return;
+
+    if (kickoutConfig.statusByte >= msg.len) return;
+
+    uint8_t status = msg.buf[kickoutConfig.statusByte];
+    bool isReady = kickoutConfig.isReady(status);
+
+    // Check for edge transition from ready to not ready (kickout)
+    if (lastReadyState && !isReady) {
+        kickoutDetected = true;
+        lastKickoutTime = millis();
+
+        LOG_WARNING(EventSource::AUTOSTEER,
+                  "CANProtocolEngine: Kickout detected! CAN 0x%08X, byte %d = %d (was ready)",
+                  msg.id, kickoutConfig.statusByte, status);
+
+        // Send error message
+        sendError("kickout", String(status).c_str());
+    }
+
+    lastReadyState = isReady;
+}
+
+// === Error Messages ===
+void CANProtocolEngine::sendError(const char* errorKey, const char* extra) {
+    const CANErrorMessageConfig* cfg = getErrorConfig(errorKey);
+    if (cfg && cfg->configured) {
+        // First pass: replace {brand}
+        char temp[64];
+        const char* tmpl = cfg->messageTemplate;
+        const char* brandPtr = strstr(tmpl, "{brand}");
+        if (brandPtr) {
+            int prefixLen = brandPtr - tmpl;
+            snprintf(temp, sizeof(temp), "%.*s%s%s", prefixLen, tmpl, brandName, brandPtr + 7);
+        } else {
+            snprintf(temp, sizeof(temp), "%s", tmpl);
+        }
+
+        // Second pass: replace {extra}
+        char message[64];
+        const char* extraPtr = strstr(temp, "{extra}");
+        if (extraPtr && extra && extra[0] != '\0') {
+            int prefixLen = extraPtr - temp;
+            snprintf(message, sizeof(message), "%.*s%s%s", prefixLen, temp, extra, extraPtr + 7);
+        } else if (extraPtr) {
+            // Remove {extra} placeholder
+            int prefixLen = extraPtr - temp;
+            snprintf(message, sizeof(message), "%.*s%s", prefixLen, temp, extraPtr + 7);
+        } else {
+            snprintf(message, sizeof(message), "%s", temp);
+        }
+
+        MessageBuilder::sendHardwarePopup(message, cfg->duration, cfg->color);
+    } else {
+        // Fallback if error key not found
+        if (extra && extra[0] != '\0') {
+            MessageBuilder::sendHardwarePopup(extra, 3, 1);
+        }
+    }
+}
+
+const CANErrorMessageConfig* CANProtocolEngine::getErrorConfig(const char* key) const {
+    for (uint8_t i = 0; i < errorMessageCount; i++) {
+        if (strcmp(errorMessages[i].key, key) == 0) {
+            return &errorMessages[i];
+        }
+    }
+    return nullptr;
 }
