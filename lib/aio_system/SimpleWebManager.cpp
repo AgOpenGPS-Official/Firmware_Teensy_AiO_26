@@ -658,7 +658,8 @@ void SimpleWebManager::handleDeviceSettings(EthernetClient& client, const String
         doc["serialRadioBaud"] = config->getSerialRadioBaudRate();
         doc["jdPWMEnabled"] = config->getJDPWMEnabled();
         doc["jdPWMSensitivity"] = config->getJDPWMSensitivity();
-        
+        doc["buzzerVolume"] = config->getBuzzerVolume();
+
         String json;
         serializeJson(doc, json);
         SimpleHTTPServer::sendJSON(client, json);
@@ -685,6 +686,7 @@ void SimpleWebManager::handleDeviceSettings(EthernetClient& client, const String
         uint32_t serialRadioBaud = doc["serialRadioBaud"] | 115200;
         bool jdPWMEnabled = doc["jdPWMEnabled"] | false;
         int jdPWMSensitivity = doc["jdPWMSensitivity"] | 5;
+        int buzzerVolume = doc["buzzerVolume"] | 1;
 
         // Save to ConfigManager
         ConfigManager* config = ConfigManager::getInstance();
@@ -695,12 +697,13 @@ void SimpleWebManager::handleDeviceSettings(EthernetClient& client, const String
         config->setSerialRadioBaudRate(serialRadioBaud);
         config->setJDPWMEnabled(jdPWMEnabled);
         config->setJDPWMSensitivity(jdPWMSensitivity);
-        // Sensor fusion configuration not implemented yet
-        
+        config->setBuzzerVolume(buzzerVolume);
+
         // Save to EEPROM
         config->saveTurnSensorConfig();  // This saves encoder type and JD PWM settings
         config->saveSteerConfig();       // This saves PWM brake mode
         config->saveGPSConfig();         // This saves GPS passthrough
+        config->saveMiscConfig();        // This saves buzzer volume
         
         // Apply JD PWM mode change to ADProcessor
         extern ADProcessor adProcessor;

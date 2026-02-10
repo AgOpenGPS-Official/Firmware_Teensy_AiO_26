@@ -163,11 +163,18 @@ void HardwareManager::disableBuzzer()
 
 void HardwareManager::performBuzzerTest()
 {
-    // Get buzzer volume setting from ConfigManager
+    // Get buzzer volume setting from ConfigManager (0=Quiet, 1=Loud, 2=Off)
     extern ConfigManager configManager;
-    bool loudMode = configManager.getBuzzerLoudMode();
+    uint8_t buzzerVolume = configManager.getBuzzerVolume();
 
-    if (loudMode)
+    if (buzzerVolume == 2)
+    {
+        // Off mode - no sound at all
+        LOG_INFO(EventSource::SYSTEM, "Buzzer OFF (disabled in settings)");
+        return;
+    }
+
+    if (buzzerVolume == 1)
     {
         // Loud mode for field use - play multiple tones
         LOG_INFO(EventSource::SYSTEM, "Playing LOUD buzzer test");

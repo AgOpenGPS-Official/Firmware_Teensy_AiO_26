@@ -500,7 +500,27 @@ void AutosteerProcessor::process() {
     } else {
         switchCounter = 0;
     }
-    
+
+    // Check for valve/motor lost during active steering
+    // If steering is armed and the tractor CAN valve goes not-ready, disarm immediately
+    if (steerState == 0 && motorPTR && motorPTR->getType() == MotorDriverType::TRACTOR_CAN) {
+        TractorCANDriver* tractorCAN = static_cast<TractorCANDriver*>(motorPTR);
+        if (tractorCAN) {
+            TractorBrand brand = tractorCAN->getCurrentBrand();
+            bool motorReady = (brand == TractorBrand::GENERIC)
+                ? tractorCAN->isHeartbeatValid()
+                : tractorCAN->isValveReady();
+
+            if (!motorReady) {
+                steerState = 1;  // Disarm
+                emergencyStop();
+                const char* message = getTractorValveMessage(brand);
+                MessageBuilder::sendHardwarePopup(message, 5, 1);
+                LOG_WARNING(EventSource::AUTOSTEER, "Autosteer DISARMED - valve/motor not ready during steering");
+            }
+        }
+    }
+
     // Check for work switch changes and log them
     static bool lastWorkState = false;
     bool currentWorkState = adProcessor.isWorkSwitchOn();

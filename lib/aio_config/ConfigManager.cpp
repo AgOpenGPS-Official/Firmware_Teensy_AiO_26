@@ -503,8 +503,8 @@ void ConfigManager::resetToDefaults()
     // LED defaults
     ledBrightness = 25; // 25% default brightness
 
-    // Buzzer defaults
-    buzzerLoudMode = true; // Default to loud mode for field use
+    // Buzzer defaults (0=Quiet, 1=Loud, 2=Off)
+    buzzerVolume = 1; // Default to loud mode for field use
 
     // JD PWM defaults
     jdPWMSensitivity = 5; // Middle sensitivity
@@ -684,14 +684,14 @@ void ConfigManager::loadAnalogWorkSwitchConfig()
 
 void ConfigManager::saveMiscConfig()
 {
-    LOG_DEBUG(EventSource::CONFIG, "Saving misc config: LED=%d%%, BuzzerLoud=%d, JD_PWM=%d",
-              ledBrightness, buzzerLoudMode, jdPWMSensitivity);
+    LOG_DEBUG(EventSource::CONFIG, "Saving misc config: LED=%d%%, BuzzerVol=%d, JD_PWM=%d",
+              ledBrightness, buzzerVolume, jdPWMSensitivity);
 
     int addr = MISC_CONFIG_ADDR;
     EEPROM.put(addr, ledBrightness);
     addr += sizeof(ledBrightness);
-    EEPROM.put(addr, buzzerLoudMode);
-    addr += sizeof(buzzerLoudMode);
+    EEPROM.put(addr, buzzerVolume);
+    addr += sizeof(buzzerVolume);
     EEPROM.put(addr, jdPWMSensitivity);
 }
 
@@ -701,21 +701,9 @@ void ConfigManager::loadMiscConfig()
     EEPROM.get(addr, ledBrightness);
     addr += sizeof(ledBrightness);
 
-    // Read buzzer mode as uint8_t first to check for invalid values
-    uint8_t buzzerModeRaw;
-    EEPROM.get(addr, buzzerModeRaw);
-    addr += sizeof(buzzerLoudMode);
-
-    // Check if the raw value is invalid (uninitialized EEPROM is typically 0xFF)
-    if (buzzerModeRaw > 1)
-    {
-        LOG_WARNING(EventSource::CONFIG, "Invalid buzzer mode in EEPROM (%d), defaulting to quiet mode", buzzerModeRaw);
-        buzzerLoudMode = false; // Default to quiet mode for development
-    }
-    else
-    {
-        buzzerLoudMode = (buzzerModeRaw == 1);
-    }
+    // Read buzzer volume (0=Quiet, 1=Loud, 2=Off)
+    EEPROM.get(addr, buzzerVolume);
+    addr += sizeof(buzzerVolume);
 
     EEPROM.get(addr, jdPWMSensitivity);
 
@@ -724,13 +712,17 @@ void ConfigManager::loadMiscConfig()
     {
         ledBrightness = 25; // Default
     }
+    if (buzzerVolume > 2)
+    {
+        buzzerVolume = 1; // Default to loud for field use
+    }
     if (jdPWMSensitivity < 1 || jdPWMSensitivity > 10)
     {
         jdPWMSensitivity = 5; // Default
     }
 
-    LOG_INFO(EventSource::CONFIG, "Loaded misc config from EEPROM: LED=%d%%, BuzzerLoud=%d, JD_PWM=%d",
-             ledBrightness, buzzerLoudMode, jdPWMSensitivity);
+    LOG_INFO(EventSource::CONFIG, "Loaded misc config from EEPROM: LED=%d%%, BuzzerVol=%d, JD_PWM=%d",
+             ledBrightness, buzzerVolume, jdPWMSensitivity);
 }
 
 void ConfigManager::saveNetworkConfig()

@@ -141,8 +141,8 @@ private:
     // LED settings
     uint8_t ledBrightness;
     
-    // Buzzer settings
-    bool buzzerLoudMode;         // true = loud for field use, false = quiet for development
+    // Buzzer settings (0=Quiet, 1=Loud, 2=Off)
+    uint8_t buzzerVolume;
     
     // Turn sensor configuration
     uint8_t turnSensorType;      // 0=None, 1=Encoder, 2=Pressure, 3=Current, 4=JD PWM
@@ -245,9 +245,9 @@ public:
         ledBrightness = constrain(value, 5, 100); 
     }
     
-    // Buzzer configuration
-    bool getBuzzerLoudMode() const { return buzzerLoudMode; }
-    void setBuzzerLoudMode(bool value) { buzzerLoudMode = value; }
+    // Buzzer configuration (0=Quiet, 1=Loud, 2=Off)
+    uint8_t getBuzzerVolume() const { return buzzerVolume; }
+    void setBuzzerVolume(uint8_t value) { buzzerVolume = (value <= 2) ? value : 1; }
     
     // GPS configuration methods
     uint32_t getGPSBaudRate() const { return gpsBaudRate; }

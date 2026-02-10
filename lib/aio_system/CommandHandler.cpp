@@ -150,15 +150,15 @@ void CommandHandler::handleCommand(char cmd) {
             }
             break;
             
-        case 'v':  // Toggle buzzer volume
+        case 'v':  // Cycle buzzer volume (Quiet -> Loud -> Off -> Quiet)
         case 'V':
             {
                 extern ConfigManager configManager;
-                bool currentMode = configManager.getBuzzerLoudMode();
-                configManager.setBuzzerLoudMode(!currentMode);
-                configManager.saveMiscConfig();  // Save to EEPROM
-                Serial.printf("\r\nBuzzer volume set to: %s\r\n", 
-                             configManager.getBuzzerLoudMode() ? "LOUD (field use)" : "QUIET (development)");
+                uint8_t vol = (configManager.getBuzzerVolume() + 1) % 3;
+                configManager.setBuzzerVolume(vol);
+                configManager.saveMiscConfig();
+                const char* volNames[] = {"QUIET", "LOUD", "OFF"};
+                Serial.printf("\r\nBuzzer volume set to: %s\r\n", volNames[vol]);
             }
             break;
 

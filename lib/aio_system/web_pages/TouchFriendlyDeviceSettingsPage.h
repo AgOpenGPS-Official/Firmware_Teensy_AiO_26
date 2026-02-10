@@ -224,7 +224,8 @@ const char TOUCH_FRIENDLY_DEVICE_SETTINGS_PAGE[] PROGMEM = R"rawliteral(
                 encoderType: parseInt(document.getElementById('encoderType').value),
                 serialRadioBaud: parseInt(document.getElementById('serialRadioBaud').value),
                 jdPWMEnabled: document.getElementById('jdPWMEnabled').checked,
-                jdPWMSensitivity: parseInt(document.getElementById('jdPWMSensitivity').value)
+                jdPWMSensitivity: parseInt(document.getElementById('jdPWMSensitivity').value),
+                buzzerVolume: parseInt(document.getElementById('buzzerVolume').value)
             };
             
             // Show saving status
@@ -277,6 +278,7 @@ const char TOUCH_FRIENDLY_DEVICE_SETTINGS_PAGE[] PROGMEM = R"rawliteral(
                     document.getElementById('jdPWMSensitivity').value = data.jdPWMSensitivity || 5;
                     updateSensitivityValue(data.jdPWMSensitivity || 5);
                     toggleJDPWMSensitivity();
+                    document.getElementById('buzzerVolume').value = (data.buzzerVolume !== undefined) ? data.buzzerVolume : 1;
                 })
                 .catch((error) => {
                     console.error('Error loading settings:', error);
@@ -394,7 +396,19 @@ const char TOUCH_FRIENDLY_DEVICE_SETTINGS_PAGE[] PROGMEM = R"rawliteral(
                         Set the baud rate for the serial radio (XBee) used for RTK corrections. Some radios cannot easily change their baud rate, so match this setting to your radio's configuration.
                     </div>
                 </div>
-                
+
+                <div class="form-group" style="margin-top: 15px;">
+                    <label for="buzzerVolume">Buzzer Volume:</label>
+                    <select id="buzzerVolume" name="buzzerVolume">
+                        <option value="1">Loud</option>
+                        <option value="0">Quiet</option>
+                        <option value="2">Off</option>
+                    </select>
+                    <div class="help-text" style="margin-top: 5px;">
+                        Loud plays a multi-tone startup chime. Quiet plays a brief click. Off disables the buzzer entirely.
+                    </div>
+                </div>
+
                 <div class="toggle-container" style="margin-top: 15px;">
                     <div class="toggle-info">
                         <label for="jdPWMEnabled" class="toggle-label">John Deere PWM Encoder Mode</label>

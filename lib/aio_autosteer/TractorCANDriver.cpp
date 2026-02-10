@@ -879,14 +879,17 @@ void TractorCANDriver::processValtraMessage(const CAN_message_t& msg) {
         int16_t estCurve = (msg.buf[1] << 8) | msg.buf[0];
 
         // Extract valve ready state from byte 2
-        bool valveReady = (msg.buf[2] != 0);
-
-        if (valveReady) {
+        if (msg.buf[2] != 0) {
             if (!steerReady) {
                 LOG_INFO(EventSource::AUTOSTEER, "Valtra steering valve ready");
             }
             steerReady = true;
             lastSteerReadyTime = millis();
+        } else {
+            if (steerReady) {
+                LOG_WARNING(EventSource::AUTOSTEER, "Valtra steering valve not ready");
+            }
+            steerReady = false;
         }
 
         // Store actual position for feedback (convert to our scale)
