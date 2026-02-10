@@ -1389,8 +1389,9 @@ void SimpleWebManager::handleCANConfigUpload(EthernetClient& client) {
     }
 
     // Validate JSON by parsing it - use DynamicJsonDocument for large files
+    // Increase nesting depth for complex JSON structures (default is 10)
     DynamicJsonDocument testDoc(24576);  // 24KB buffer for validation
-    DeserializationError error = deserializeJson(testDoc, jsonContent);
+    DeserializationError error = deserializeJson(testDoc, jsonContent, DeserializationOption::NestingLimit(20));
 
     if (error) {
         String errorMsg = "Invalid JSON: ";
