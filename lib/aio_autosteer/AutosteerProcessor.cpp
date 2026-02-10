@@ -436,7 +436,15 @@ void AutosteerProcessor::process() {
                  kickoutMonitor ? kickoutMonitor->hasKickout() : 0);
 
         if (guidanceActive) {
-            // SAFETY CHECK: Verify motor/valve ready before engagement
+            // Guidance turned ON in AgOpenGPS - first arm steering so AOG sees the state change
+            steerState = 0;
+            LOG_INFO(EventSource::AUTOSTEER, "Autosteer ARMED via AgOpenGPS (Guidance ON)");
+
+            // CRITICAL: Send PGN 253 immediately so AOG sees steerState = 0
+            sendPGN253();
+
+            // SAFETY CHECK: Verify motor/valve ready after arming
+            // If not ready, immediately disarm and notify AOG
             if (motorPTR && motorPTR->getType() == MotorDriverType::TRACTOR_CAN) {
                 TractorCANDriver* tractorCAN = static_cast<TractorCANDriver*>(motorPTR);
                 if (tractorCAN) {
@@ -451,31 +459,33 @@ void AutosteerProcessor::process() {
                         motorReady = tractorCAN->isValveReady();
                     }
 
-                    // Block engagement if not ready
+                    // If not ready after arming, disarm immediately
                     if (!motorReady) {
+                        // TEMPORARY: 500ms delay to let AOG see the armed state
+                        delay(200);
+
+                        steerState = 1;  // Disarm
+                        sendPGN253();  // Tell AOG immediately so it sees 0->1 transition
+
                         const char* message = getTractorValveMessage(brand);
                         MessageBuilder::sendHardwarePopup(message, 5, 1);
 
                         LOG_WARNING(EventSource::AUTOSTEER,
-                            "Autosteer engagement blocked via AgOpenGPS - motor/valve not ready (brand: %d)",
+                            "Guidance ON - motor/valve not ready, disarmed (brand: %d)",
                             static_cast<int>(brand));
 
-                        // Don't activate steering - keep it disarmed
-                        return;
+                        guidanceStatusChanged = false;
+                        return;  // Skip the rest of this cycle
                     }
                 }
             }
 
-            // Guidance turned ON in AgOpenGPS
-            steerState = 0;  // Activate steering
-            LOG_INFO(EventSource::AUTOSTEER, "Autosteer ARMED via AgOpenGPS (OSB)");
-
             // If there's a kickout active, clear it
             if (kickoutMonitor && kickoutMonitor->hasKickout()) {
                 kickoutMonitor->clearKickout();
-                LOG_INFO(EventSource::AUTOSTEER, "KICKOUT: Cleared via AgOpenGPS (OSB)");
+                LOG_INFO(EventSource::AUTOSTEER, "KICKOUT: Cleared via AgOpenGPS");
             }
-            
+
             // Reset encoder count when autosteer engages
             if (EncoderProcessor::getInstance() && EncoderProcessor::getInstance()->isEnabled()) {
                 EncoderProcessor::getInstance()->resetPulseCount();
@@ -1057,25 +1067,8 @@ void AutosteerProcessor::handleSteerData(uint8_t pgn, const uint8_t* data, size_
     
     // Extract status
     uint8_t status = data[2];
-    bool newAutosteerState = (status & 0x40) != 0;  // Bit 6 is autosteer enable
-    
-    // Debug OSB behavior - log every second during kickout
-    static uint32_t lastStatusLog = 0;
-    if (kickoutMonitor && kickoutMonitor->hasKickout() && millis() - lastStatusLog > 1000) {
-        lastStatusLog = millis();
-        LOG_DEBUG(EventSource::AUTOSTEER, "During kickout - PGN254 status: 0x%02X (guidance=%d, autosteer=%d), steerState=%d",
-                 status, (status & 0x01) != 0, (status & 0x40) != 0, steerState);
-    }
-    
-    // Also log any status changes
-    static uint8_t lastStatus = 0;
-    if (status != lastStatus) {
-        LOG_DEBUG(EventSource::AUTOSTEER, "PGN254 status changed: 0x%02X -> 0x%02X (guidance=%d, autosteer=%d)",
-                 lastStatus, status, (status & 0x01) != 0, (status & 0x40) != 0);
-        lastStatus = status;
-    }
-    
-    
+    bool newAutosteerState = (status & 0x40) != 0;  // Bit 6 is autosteer enable (not currently used by AOG)
+
     // Track guidance status changes
     static bool firstBroadcast = true;
     bool newGuidanceActive = (status & 0x01) != 0;   // Bit 0 is guidance active
@@ -1109,37 +1102,10 @@ void AutosteerProcessor::handleSteerData(uint8_t pgn, const uint8_t* data, size_
     uint8_t sections1_8 = data[6];
     uint8_t sections9_16 = data[7];
     machineSections = (uint16_t)(sections9_16 << 8 | sections1_8);
-    
-    // Track autosteer enable bit changes for OSB handling
-    static bool prevAutosteerEnabled = false;
-    if (newAutosteerState != prevAutosteerEnabled) {
-        LOG_INFO(EventSource::AUTOSTEER, "AgOpenGPS autosteer bit changed: %s",
-                      newAutosteerState ? "ENABLED" : "DISABLED");
 
-        // OSB button was pressed - handle it even when button mode is configured
-        if (newAutosteerState && !prevAutosteerEnabled) {
-            // OSB turned ON - arm autosteer
-            steerState = 0;
-            LOG_INFO(EventSource::AUTOSTEER, "Autosteer ARMED via AgOpenGPS (OSB bit 6)");
-
-            // If there's a kickout active, clear it
-            if (kickoutMonitor && kickoutMonitor->hasKickout()) {
-                kickoutMonitor->clearKickout();
-                LOG_INFO(EventSource::AUTOSTEER, "KICKOUT: Cleared via OSB");
-            }
-
-            // Reset encoder count
-            if (EncoderProcessor::getInstance() && EncoderProcessor::getInstance()->isEnabled()) {
-                EncoderProcessor::getInstance()->resetPulseCount();
-                LOG_INFO(EventSource::AUTOSTEER, "Encoder count reset for new engagement");
-            }
-        } else if (!newAutosteerState && prevAutosteerEnabled) {
-            // OSB turned OFF - disarm autosteer
-            steerState = 1;
-            LOG_INFO(EventSource::AUTOSTEER, "Autosteer DISARMED via AgOpenGPS (OSB bit 6)");
-        }
-        prevAutosteerEnabled = newAutosteerState;
-    }
+    // Note: OSB (bit 6) handling is no longer needed since we use guidance-based engagement (bit 0)
+    // AgOpenGPS currently has a bug where it sets status to 1 instead of 0x40, so bit 6 is never set
+    // The guidance-based engagement logic in process() handles arming/disarming based on bit 0
     autosteerEnabled = newAutosteerState;
 }
 
@@ -1197,7 +1163,7 @@ void AutosteerProcessor::sendPGN253() {
     switchByte |= (0 << 2);        // No remote/kickout for now
     switchByte |= (steerState << 1);  // Steer state in bit 1
     switchByte |= !adProcessor.isWorkSwitchOn();  // Work switch state (inverted) in bit 0
-    
+
     uint8_t pgn253[] = {
         0x80, 0x81,                    // Header
         0x7E,                          // Source: Steer module (126)
