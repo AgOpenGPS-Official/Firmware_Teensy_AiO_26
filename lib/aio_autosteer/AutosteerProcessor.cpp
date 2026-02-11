@@ -429,6 +429,16 @@ void AutosteerProcessor::process() {
         }
     }
     
+    // Handle deferred disarm (AOG OSB handshake)
+    // After briefly arming for a valve-not-ready rejection, disarm once AOG has had
+    // time to see the armed status and toggle the OSB off.
+    if (pendingDisarm && (millis() - pendingDisarmTime >= DISARM_HANDSHAKE_MS)) {
+        pendingDisarm = false;
+        steerState = 1;
+        sendPGN253();
+        LOG_INFO(EventSource::AUTOSTEER, "Deferred disarm complete - motor/valve was not ready");
+    }
+
     // Check if guidance status changed from AgOpenGPS
     if (guidanceStatusChanged) {
         LOG_INFO(EventSource::AUTOSTEER, "Guidance status changed: %s (steerState=%d, hasKickout=%d)",
@@ -451,16 +461,21 @@ void AutosteerProcessor::process() {
                         motorReady = tractorCAN->isValveReady();
                     }
 
-                    // Block engagement if not ready
+                    // If not ready, briefly arm so AOG sees the state change
+                    // (needed for OSB handshake), then schedule a deferred disarm
                     if (!motorReady) {
                         const char* message = getTractorValveMessage(brand);
                         MessageBuilder::sendHardwarePopup(message, 5, 1);
 
                         LOG_WARNING(EventSource::AUTOSTEER,
-                            "Autosteer engagement blocked via AgOpenGPS - motor/valve not ready (brand: %d)",
+                            "Motor/valve not ready (brand: %d) - arming briefly for AOG handshake",
                             static_cast<int>(brand));
 
-                        // Don't activate steering - keep it disarmed
+                        steerState = 0;  // Arm temporarily
+                        sendPGN253();    // AOG sees armed status immediately
+                        pendingDisarm = true;
+                        pendingDisarmTime = millis();
+                        guidanceStatusChanged = false;
                         return;
                     }
                 }

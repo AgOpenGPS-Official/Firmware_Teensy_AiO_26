@@ -90,6 +90,13 @@ private:
     uint16_t softAccelDurationMs = 250;     // Duration of soft-acceleration ramp (150-500ms range)
     bool useSineRamp = false;                // Use sine curve (true) or linear ramp (false)
     
+    // Deferred disarm for AOG OSB handshake
+    // When valve/motor not ready, we briefly arm so AOG sees the state change,
+    // then disarm after 200ms so AOG can properly toggle the OSB off.
+    bool pendingDisarm = false;
+    uint32_t pendingDisarmTime = 0;
+    static constexpr uint32_t DISARM_HANDSHAKE_MS = 200;
+
     // Link state tracking
     bool linkWasDown = false;               // Track if link was down
     
