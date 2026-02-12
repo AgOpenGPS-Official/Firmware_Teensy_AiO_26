@@ -23,6 +23,7 @@
 #include "MotorDriverInterface.h"
 #include "MotorDriverManager.h"
 #include "CANGlobals.h"
+#include "CANConfigStorage.h"  // Must be before motor driver init for LittleFS
 #include "AutosteerProcessor.h"
 #include "EncoderProcessor.h"
 #include "KeyaCANDriver.h"
@@ -397,7 +398,15 @@ void setup()
   {
     LOG_ERROR(EventSource::SYSTEM, "ADProcessor FAILED");
   }
-  
+
+  // Initialize LittleFS for CAN config storage BEFORE motor driver init
+  // TractorCANDriver needs LittleFS to be ready to load custom JSON configs
+  if (!CANConfigStorage::init()) {
+    LOG_WARNING(EventSource::SYSTEM, "LittleFS init failed - custom CAN config not available");
+  } else {
+    LOG_INFO(EventSource::SYSTEM, "LittleFS initialized for CAN config storage");
+  }
+
   // Initialize Motor Driver BEFORE PWMProcessor to ensure correct PWM resolution
   motorPTR = MotorDriverManager::getInstance()->detectAndCreateMotorDriver(&hardwareManager, &canManager);
   
