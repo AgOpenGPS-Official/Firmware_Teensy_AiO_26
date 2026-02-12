@@ -156,14 +156,14 @@ void TractorCANDriver::process() {
     // Check for timeouts
     static bool timeoutLogged = false;
     if (config.brand != static_cast<uint8_t>(TractorBrand::DISABLED)) {
-        if (steerReady && (millis() - lastSteerReadyTime > 250)) {
+        if (steerReady && (millis() - lastSteerReadyTime > 500)) {
             steerReady = false;
             if (!timeoutLogged) {
                 if (hasKeyaFunction()) {
                     heartbeatValid = false;
                     LOG_ERROR(EventSource::AUTOSTEER, "TractorCAN connection lost - no heartbeat");
                 } else {
-                    LOG_WARNING(EventSource::AUTOSTEER, "%s connection timeout - no valve ready for >250ms", getTypeName());
+                    LOG_WARNING(EventSource::AUTOSTEER, "%s connection timeout - no valve ready for >500ms", getTypeName());
                 }
                 timeoutLogged = true;
             }
@@ -287,8 +287,12 @@ void TractorCANDriver::sendSteerCommands() {
     if (hasKeyaFunction()) {
         sendKeyaCommands();
     } else if (useProtocolEngine) {
-        // Data-driven path
-        protocolEngine.sendSteerCommand(targetPWM, enabled && steerReady, steerBusNum);
+        // Data-driven path: send absolute position
+        // CAN tractors expect: current position - PID correction
+        // NOT just the PWM value (that's for direct motor control)
+        int16_t currentCurve = protocolEngine.getActualCurve();
+        int16_t curveToSend = currentCurve - targetPWM;
+        protocolEngine.sendSteerCommand(curveToSend, enabled && steerReady, steerBusNum);
     } else {
         // Legacy: send based on brand
         switch (static_cast<TractorBrand>(config.brand)) {
@@ -878,6 +882,9 @@ void TractorCANDriver::processValtraMessage(const CAN_message_t& msg) {
         // Extract steering curve (little-endian)
         int16_t estCurve = (msg.buf[1] << 8) | msg.buf[0];
 
+        // Store current wheel angle for steering command calculation
+        currentCurve = estCurve;
+
         // Extract valve ready state from byte 2
         if (msg.buf[2] != 0) {
             if (!steerReady) {
@@ -891,10 +898,6 @@ void TractorCANDriver::processValtraMessage(const CAN_message_t& msg) {
             }
             steerReady = false;
         }
-
-        // Store actual position for feedback (convert to our scale)
-        // Valtra curve range appears to be different from our PWM range
-        actualRPM = (float)estCurve / 100.0f;  // Store as scaled value
     }
 
     // Check for engage messages

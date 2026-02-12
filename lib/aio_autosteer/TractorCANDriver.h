@@ -56,6 +56,10 @@ private:
     uint32_t lastSteerReadyTime = 0;
     uint32_t lastCommandTime = 0;
 
+    // CAN wheel angle feedback (from tractor WAS via CAN)
+    // Stores the current wheel angle in curve units (e.g., -30000 to +30000)
+    int16_t currentCurve = 0;
+
     // Keya-specific state (used when brand == KEYA)
     float actualRPM = 0.0f;
     float commandedRPM = 0.0f;
@@ -193,6 +197,14 @@ public:
     // Unified CAN engage API (delegates to protocol engine when active)
     bool checkEngageEvent();
     const char* getEngageLabel() const;
+
+    // Get actual wheel angle from CAN (curve value from tractor)
+    // Returns the current wheel angle in curve units
+    int16_t getActualCurve() const {
+        if (useProtocolEngine) return protocolEngine.getActualCurve();
+        // Legacy: use currentCurve
+        return currentCurve;
+    }
 
     // Valve ready status methods (for engagement safety check)
     bool isValveReady() const {
