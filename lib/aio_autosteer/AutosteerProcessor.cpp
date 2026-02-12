@@ -217,6 +217,17 @@ void AutosteerProcessor::process() {
         linkWasDown = true;  // Set flag for handleSteerData
     }
     previousLinkState = currentLinkState;
+
+    // Handle deferred disarm (AOG OSB handshake)
+    // After briefly arming for a valve-not-ready rejection, disarm once AOG has had
+    // time to see the armed status and toggle the OSB off.
+    // Check this early so it runs every cycle regardless of other conditions.
+    if (pendingDisarm && (millis() - pendingDisarmTime >= DISARM_HANDSHAKE_MS)) {
+        pendingDisarm = false;
+        steerState = 1;
+        sendPGN253();
+        LOG_INFO(EventSource::AUTOSTEER, "Deferred disarm complete - motor/valve was not ready");
+    }
     
     // Update Virtual WAS if enabled
     if (wheelAngleFusionPtr && configManager.getINSUseFusion()) {
@@ -342,10 +353,11 @@ void AutosteerProcessor::process() {
                             motorReady = tractorCAN->isValveReady();
                         }
 
-                        // Block engagement if not ready
-                        if (!motorReady) {
+                        // Block engagement if not ready - only send popup to AOG, no state change
+                        bool willBeArmed = !steerState;  // New state after toggle
+                        if (willBeArmed && !motorReady) {
                             const char* message = getTractorValveMessage(brand);
-                            MessageBuilder::sendHardwarePopup(message, 5, 1);  // 5 sec, warning color
+                            MessageBuilder::sendHardwarePopup(message, 5, 1);
 
                             LOG_WARNING(EventSource::AUTOSTEER,
                                 "Autosteer engagement blocked - motor/valve not ready (brand: %d)",
@@ -397,7 +409,7 @@ void AutosteerProcessor::process() {
                                 motorReady = tractorCAN->isValveReady();
                             }
 
-                            // Block engagement if not ready
+                            // Block engagement if not ready - only send popup to AOG, no state change
                             if (!motorReady) {
                                 const char* message = getTractorValveMessage(brand);
                                 MessageBuilder::sendHardwarePopup(message, 5, 1);
@@ -415,38 +427,42 @@ void AutosteerProcessor::process() {
 
                 // Switch state changed
                 steerState = switchOn ? 0 : 1;  // 0 = armed, 1 = disarmed
-                LOG_INFO(EventSource::AUTOSTEER, "Autosteer %s via switch", 
+                LOG_INFO(EventSource::AUTOSTEER, "Autosteer %s via switch",
                          steerState == 0 ? "ARMED" : "DISARMED");
-                
+
                 // Reset encoder count when autosteer is armed
                 if (steerState == 0 && EncoderProcessor::getInstance() && EncoderProcessor::getInstance()->isEnabled()) {
                     EncoderProcessor::getInstance()->resetPulseCount();
                     LOG_INFO(EventSource::AUTOSTEER, "Encoder count reset for new engagement");
                 }
-                
+
                 lastSwitchState = switchOn;
             }
         }
     }
-    
-    // Handle deferred disarm (AOG OSB handshake)
-    // After briefly arming for a valve-not-ready rejection, disarm once AOG has had
-    // time to see the armed status and toggle the OSB off.
-    if (pendingDisarm && (millis() - pendingDisarmTime >= DISARM_HANDSHAKE_MS)) {
-        pendingDisarm = false;
-        steerState = 1;
-        sendPGN253();
-        LOG_INFO(EventSource::AUTOSTEER, "Deferred disarm complete - motor/valve was not ready");
-    }
 
     // Check if guidance status changed from AgOpenGPS
     if (guidanceStatusChanged) {
+        // Clear flag immediately to prevent re-processing in next cycle
+        bool wasActive = prevGuidanceStatus;
+        bool isActive = guidanceActive;
+        guidanceStatusChanged = false;
+
         LOG_INFO(EventSource::AUTOSTEER, "Guidance status changed: %s (steerState=%d, hasKickout=%d)",
                  guidanceActive ? "ACTIVE" : "INACTIVE", steerState,
                  kickoutMonitor ? kickoutMonitor->hasKickout() : 0);
 
         if (guidanceActive) {
-            // SAFETY CHECK: Verify motor/valve ready before engagement
+            // Guidance turned ON - FIRST arm steering so AOG sees the state change
+            // (matches OSB_fix behavior: arm first, check motor readiness after)
+            steerState = 0;
+            LOG_INFO(EventSource::AUTOSTEER, "Autosteer ARMED via AgOpenGPS (Guidance ON)");
+
+            // CRITICAL: Send PGN 253 immediately so AOG sees steerState = 0
+            sendPGN253();
+
+            // SAFETY CHECK: Verify motor/valve ready after arming
+            // If not ready, schedule a deferred disarm (non-blocking alternative to delay(200))
             if (motorPTR && motorPTR->getType() == MotorDriverType::TRACTOR_CAN) {
                 TractorCANDriver* tractorCAN = static_cast<TractorCANDriver*>(motorPTR);
                 if (tractorCAN) {
@@ -461,45 +477,38 @@ void AutosteerProcessor::process() {
                         motorReady = tractorCAN->isValveReady();
                     }
 
-                    // If not ready, briefly arm so AOG sees the state change
-                    // (needed for OSB handshake), then schedule a deferred disarm
+                    // If not ready after arming, schedule deferred disarm
+                    // (non-blocking: will disarm in 200ms via the check at top of process())
                     if (!motorReady) {
                         const char* message = getTractorValveMessage(brand);
                         MessageBuilder::sendHardwarePopup(message, 5, 1);
 
                         LOG_WARNING(EventSource::AUTOSTEER,
-                            "Motor/valve not ready (brand: %d) - arming briefly for AOG handshake",
+                            "Motor/valve not ready (brand: %d) - deferred disarm scheduled",
                             static_cast<int>(brand));
 
-                        steerState = 0;  // Arm temporarily
-                        sendPGN253();    // AOG sees armed status immediately
+                        // Schedule deferred disarm - will be handled at top of process()
                         pendingDisarm = true;
                         pendingDisarmTime = millis();
-                        guidanceStatusChanged = false;
-                        return;
+                        // Don't return - let process() continue normally
                     }
                 }
             }
-
-            // Guidance turned ON in AgOpenGPS
-            steerState = 0;  // Activate steering
-            LOG_INFO(EventSource::AUTOSTEER, "Autosteer ARMED via AgOpenGPS (Guidance ON)");
 
             // If there's a kickout active, clear it
             if (kickoutMonitor && kickoutMonitor->hasKickout()) {
                 kickoutMonitor->clearKickout();
                 LOG_INFO(EventSource::AUTOSTEER, "KICKOUT: Cleared via AgOpenGPS (Guidance ON)");
             }
-            
+
             // Reset encoder count when autosteer engages
             if (EncoderProcessor::getInstance() && EncoderProcessor::getInstance()->isEnabled()) {
                 EncoderProcessor::getInstance()->resetPulseCount();
                 LOG_INFO(EventSource::AUTOSTEER, "Encoder count reset for new engagement");
             }
         }
-        guidanceStatusChanged = false;  // Clear flag
     }
-    
+
     // If AgOpenGPS has stopped steering, turn off after delay
     // BUT only if not using a physical switch in switch mode OR button mode
     static int switchCounter = 0;
@@ -519,7 +528,8 @@ void AutosteerProcessor::process() {
 
     // Check for valve/motor lost during active steering
     // If steering is armed and the tractor CAN valve goes not-ready, disarm immediately
-    if (steerState == 0 && motorPTR && motorPTR->getType() == MotorDriverType::TRACTOR_CAN) {
+    // Skip this check if we have a pending disarm (handshake in progress)
+    if (steerState == 0 && !pendingDisarm && motorPTR && motorPTR->getType() == MotorDriverType::TRACTOR_CAN) {
         TractorCANDriver* tractorCAN = static_cast<TractorCANDriver*>(motorPTR);
         if (tractorCAN) {
             TractorBrand brand = tractorCAN->getCurrentBrand();
@@ -648,11 +658,34 @@ void AutosteerProcessor::process() {
     }
 
     // Always update current angle reading (needed for PGN253 even when autosteer is off)
-    // Get current steering angle - use VWAS if enabled and available
-    if (configManager.getINSUseFusion() && wheelAngleFusionPtr && wheelAngleFusionPtr->isHealthy()) {
+    // Priority: 1) CAN actualCurve (TractorCAN), 2) VWAS fusion, 3) Analog WAS
+    bool canAngleAvailable = false;
+
+    // First try: Get angle from CAN if using TractorCAN with ProtocolEngine
+    if (motorPTR && motorPTR->getType() == MotorDriverType::TRACTOR_CAN) {
+        TractorCANDriver* tractorCAN = static_cast<TractorCANDriver*>(motorPTR);
+        if (tractorCAN) {
+            int16_t canCurve = tractorCAN->getActualCurve();
+            // Check if we have valid CAN data (recent data received)
+            if (tractorCAN->isValveDataReceived()) {
+                // Convert CAN curve to angle (scale factor depends on tractor)
+                // Most tractors use curve values in range like -30000 to +30000 for degrees
+                // Assuming 100:1 scale (common for Valtra/MF)
+                currentAngle = (float)canCurve / 100.0f;
+                canAngleAvailable = true;
+            } else {
+                // CAN data not available - send 0 degrees to AgOpenGPS (safety)
+                currentAngle = 0.0f;
+            }
+        }
+    }
+
+    // Second try: VWAS fusion if enabled and available
+    else if (configManager.getINSUseFusion() && wheelAngleFusionPtr && wheelAngleFusionPtr->isHealthy()) {
         currentAngle = wheelAngleFusionPtr->getFusedAngle();
-    } else {
-        // Fall back to physical WAS
+    }
+    // Third try: Fall back to physical WAS
+    else {
         currentAngle = adProcessor.getWASAngle();
     }
     
