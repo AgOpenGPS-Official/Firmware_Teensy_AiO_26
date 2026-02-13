@@ -648,11 +648,22 @@ void AutosteerProcessor::process() {
     }
 
     // Always update current angle reading (needed for PGN253 even when autosteer is off)
-    // Get current steering angle - use VWAS if enabled and available
-    if (configManager.getINSUseFusion() && wheelAngleFusionPtr && wheelAngleFusionPtr->isHealthy()) {
+    // CAN WAS priority: use CAN curve when TractorCAN is active and receiving data
+    if (motorPTR && motorPTR->getType() == MotorDriverType::TRACTOR_CAN) {
+        TractorCANDriver* tractorCAN = static_cast<TractorCANDriver*>(motorPTR);
+        if (tractorCAN && tractorCAN->isValveDataReceived()) {
+            // CAN WAS available — use it as primary source
+            int16_t canCurve = tractorCAN->getActualCurve();
+            float scale = tractorCAN->getCurveScale();
+            currentAngle = (float)canCurve / scale;
+        } else if (configManager.getINSUseFusion() && wheelAngleFusionPtr && wheelAngleFusionPtr->isHealthy()) {
+            currentAngle = wheelAngleFusionPtr->getFusedAngle();
+        } else {
+            currentAngle = adProcessor.getWASAngle();
+        }
+    } else if (configManager.getINSUseFusion() && wheelAngleFusionPtr && wheelAngleFusionPtr->isHealthy()) {
         currentAngle = wheelAngleFusionPtr->getFusedAngle();
     } else {
-        // Fall back to physical WAS
         currentAngle = adProcessor.getWASAngle();
     }
     

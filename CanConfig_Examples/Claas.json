@@ -98,6 +98,7 @@
         "SendCurveLoHi": "0,1",
         "VReceiveCurve": "0x0CAC1E13",
         "ReceiveCurveLoHi": "0,1",
+        "CurveScale": 100,
         "ValveState": 2,
         "ITS1": "2,253",
         "ITS0": "2,252"

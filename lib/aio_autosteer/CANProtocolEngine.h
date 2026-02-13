@@ -51,6 +51,7 @@ struct CANReceiveConfig {
     uint8_t curveLoBytePos;
     uint8_t curveHiBytePos;
     uint8_t valveStateBytePos;
+    float curveScale = 100.0f;  // Divisor to convert raw int16 curve to degrees
     bool configured;
 };
 
@@ -128,6 +129,7 @@ public:
     bool isValveReady() const { return valveReady; }
     bool isValveDataReceived() const { return valveDataReceived; }
     int16_t getActualCurve() const { return actualCurve; }
+    float getCurveScale() const { return receiveConfig.curveScale; }
 
     // Filter IDs for hardware mailbox setup
     uint8_t getFilterCount() const { return filterCount; }

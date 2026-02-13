@@ -52,6 +52,7 @@ private:
     // Common state
     bool enabled = false;
     int16_t targetPWM = 0;
+    int16_t currentCurve = 0;  // Raw curve value from CAN (legacy path)
     bool steerReady = false;
     uint32_t lastSteerReadyTime = 0;
     uint32_t lastCommandTime = 0;
@@ -193,6 +194,16 @@ public:
     // Unified CAN engage API (delegates to protocol engine when active)
     bool checkEngageEvent();
     const char* getEngageLabel() const;
+
+    // CAN curve feedback (for CAN WAS)
+    int16_t getActualCurve() const {
+        if (useProtocolEngine) return protocolEngine.getActualCurve();
+        return currentCurve;
+    }
+    float getCurveScale() const {
+        if (useProtocolEngine) return protocolEngine.getCurveScale();
+        return 100.0f;
+    }
 
     // Valve ready status methods (for engagement safety check)
     bool isValveReady() const {

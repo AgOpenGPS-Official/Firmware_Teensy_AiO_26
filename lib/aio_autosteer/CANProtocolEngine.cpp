@@ -30,7 +30,8 @@ bool CANProtocolEngine::loadConfig(const char* json, size_t len, uint8_t brandId
 
     // Parse JSON document (24KB matches SimpleWebManager pattern)
     DynamicJsonDocument doc(24576);
-    DeserializationError error = deserializeJson(doc, json, len);
+    DeserializationError error = deserializeJson(doc, json, len,
+                                                  DeserializationOption::NestingLimit(20));
 
     if (error) {
         LOG_ERROR(EventSource::AUTOSTEER, "CANProtocolEngine: JSON parse error: %s", error.c_str());

@@ -183,6 +183,9 @@ bool canConfigParseReceiveConfig(const JsonObject& canConfig, CANReceiveConfig& 
         config.valveStateBytePos = 2;  // Default: byte 2
     }
 
+    // Parse curve scale factor (divisor for raw int16 → degrees, default 100)
+    config.curveScale = canConfig["CurveScale"] | 100.0f;
+
     config.configured = true;
     return true;
 }

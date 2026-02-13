@@ -37,6 +37,7 @@
 #include "SimpleWebManager.h"
 #include "Version.h"
 #include "ESP32Interface.h"
+#include "CANConfigStorage.h"
 #include "SimpleScheduler/SimpleScheduler.h"
 
 // Flash ID for OTA verification - must match FLASH_ID in FlashTxx.h
@@ -398,6 +399,10 @@ void setup()
     LOG_ERROR(EventSource::SYSTEM, "ADProcessor FAILED");
   }
   
+  // Initialize LittleFS BEFORE motor driver (TractorCANDriver reads JSON config from flash)
+  CANConfigStorage::init();
+  LOG_INFO(EventSource::SYSTEM, "CANConfigStorage (LittleFS) initialized");
+
   // Initialize Motor Driver BEFORE PWMProcessor to ensure correct PWM resolution
   motorPTR = MotorDriverManager::getInstance()->detectAndCreateMotorDriver(&hardwareManager, &canManager);
   

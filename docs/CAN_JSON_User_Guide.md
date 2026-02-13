@@ -415,6 +415,10 @@ For reading hitch position from CAN:
 | Field | Description | Example |
 |-------|-------------|---------|
 | `VFilter` | CAN IDs to receive on V_Bus (comma-separated) | `"0x0CACAA08,0x18FFBB03"` |
+| `VReceiveCurve` | CAN ID for receiving curve/valve status | `"0x0CAC1C13"` |
+| `ReceiveCurveLoHi` | Byte positions for received curve value (low,high) | `"0,1"` |
+| `ValveState` | Byte position for valve ready status (0 = not ready) | `2` |
+| `CurveScale` | Divisor to convert raw CAN curve to degrees (default 100) | `100` |
 | `VSendCurve` | CAN ID for sending steering commands | `"0x0CAD08AA"` |
 | `VDataLen` | Data length for V_Bus messages | `6` or `8` |
 | `SendCurve` | Default byte values for curve message | `"0,0,0,255,255,255,255,255"` |
