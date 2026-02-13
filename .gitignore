@@ -4,6 +4,7 @@
 .vscode/launch.json
 .vscode/ipch
 .DS_Store
+*.hex
 test/
 
 .fake
