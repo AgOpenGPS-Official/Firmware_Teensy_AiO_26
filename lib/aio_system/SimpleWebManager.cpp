@@ -314,7 +314,7 @@ void SimpleWebManager::setupRoutes() {
 
     httpServer.on("/cansniffer/log", [this](EthernetClient& client, const String& method, const String& query) {
         if (method == "GET") {
-            handleCANSnifferLog(client);
+            handleCANSnifferLog(client, query);
         } else {
             SimpleHTTPServer::send(client, 405, "text/plain", "Method Not Allowed");
         }
@@ -1553,7 +1553,17 @@ void SimpleWebManager::handleCANSnifferClear(EthernetClient& client) {
     SimpleHTTPServer::send(client, 200, "text/plain", "OK");
 }
 
-void SimpleWebManager::handleCANSnifferLog(EthernetClient& client) {
+void SimpleWebManager::handleCANSnifferLog(EthernetClient& client, const String& query) {
+    // Check for noclear parameter (for CSV export - don't clear buffer after reading)
+    bool clearAfterRead = true;
+    int noclearIdx = query.indexOf("noclear=");
+    if (noclearIdx >= 0) {
+        char val = query.charAt(noclearIdx + 8);
+        if (val == '1') {
+            clearAfterRead = false;
+        }
+    }
+
     // Allocate buffer for log text (max 32KB to avoid memory issues)
     const size_t bufferSize = 32768;
     char* buffer = (char*)malloc(bufferSize);
@@ -1562,7 +1572,7 @@ void SimpleWebManager::handleCANSnifferLog(EthernetClient& client) {
         return;
     }
 
-    size_t lineCount = globalCANSniffer.getFormattedText(buffer, bufferSize, true);
+    globalCANSniffer.getFormattedText(buffer, bufferSize, clearAfterRead);
 
     // Send as plain text
     SimpleHTTPServer::send(client, 200, "text/plain; charset=utf-8", buffer);

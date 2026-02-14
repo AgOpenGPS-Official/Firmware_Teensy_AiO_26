@@ -91,7 +91,7 @@ private:
     void handleCANSnifferEnable(EthernetClient& client, const String& query);
     void handleCANSnifferBus(EthernetClient& client, const String& query);
     void handleCANSnifferClear(EthernetClient& client);
-    void handleCANSnifferLog(EthernetClient& client);
+    void handleCANSnifferLog(EthernetClient& client, const String& query);
     void handleCANSnifferStatus(EthernetClient& client);
     void handleCANSnifferStats(EthernetClient& client);
 
