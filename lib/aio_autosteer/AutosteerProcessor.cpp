@@ -687,9 +687,6 @@ void AutosteerProcessor::process() {
     
     // Note: LOCK output is handled by motor driver enable pin (dual-purpose)
     
-    // Send PGN 253 status to AgOpenGPS
-    sendPGN253();
-    
     // Update LED status - simple motor state tracking
     bool motorActive = (motorState != MotorState::DISABLED);  // Check actual motor state
 
@@ -1124,6 +1121,9 @@ void AutosteerProcessor::handleSteerData(uint8_t pgn, const uint8_t* data, size_
     machineSections = (uint16_t)(sections9_16 << 8 | sections1_8);
     
     autosteerEnabled = newAutosteerState;
+
+    // Send PGN 253 status 1:1 with each PGN254 received from AgOpenGPS
+    sendPGN253();
 }
 
 // Static callback wrapper
