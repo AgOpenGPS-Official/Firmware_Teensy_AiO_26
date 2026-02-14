@@ -7,6 +7,7 @@
 // TractorCANDriver.cpp - Unified CAN driver implementation
 #include "TractorCANDriver.h"
 #include "CANConfigStorage.h"
+#include "CANSniffer.h"  // CAN Sniffer for debugging
 
 bool TractorCANDriver::init() {
     // Load configuration from EEPROM
@@ -101,12 +102,20 @@ void* TractorCANDriver::getBusPointer(uint8_t busNum) {
 }
 
 bool TractorCANDriver::readCANMessage(uint8_t busNum, CAN_message_t& msg) {
+    bool result = false;
     switch (busNum) {
-        case 1: return globalCAN1.read(msg);
-        case 2: return globalCAN2.read(msg);
-        case 3: return globalCAN3.read(msg);
+        case 1: result = globalCAN1.read(msg); break;
+        case 2: result = globalCAN2.read(msg); break;
+        case 3: result = globalCAN3.read(msg); break;
         default: return false;
     }
+
+    // Log to CAN sniffer if message was read and sniffer is enabled
+    if (result) {
+        globalCANSniffer.logMessage(msg, busNum, false);  // RX
+    }
+
+    return result;
 }
 
 void TractorCANDriver::writeCANMessage(uint8_t busNum, const CAN_message_t& msg) {
@@ -115,6 +124,9 @@ void TractorCANDriver::writeCANMessage(uint8_t busNum, const CAN_message_t& msg)
         case 2: globalCAN2.write(msg); break;
         case 3: globalCAN3.write(msg); break;
     }
+
+    // Log to CAN sniffer if sniffer is enabled
+    globalCANSniffer.logMessage(msg, busNum, true);  // TX
 }
 
 void TractorCANDriver::enable(bool en) {

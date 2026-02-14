@@ -29,6 +29,7 @@
 #include "KickoutMonitor.h"
 #include "LEDManagerFSM.h"
 #include "MachineProcessor.h"
+#include "CANSniffer.h"  // CAN Sniffer for debugging
 // SubnetManager functionality moved to QNetworkBase
 #include "EventLogger.h"
 #include "CommandHandler.h"
@@ -484,6 +485,10 @@ void setup()
   } else {
     LOG_ERROR(EventSource::SYSTEM, "WebManager FAILED");
   }
+
+  // Initialize CAN Sniffer (for CAN debugging)
+  globalCANSniffer.init();
+  LOG_INFO(EventSource::SYSTEM, "CANSniffer initialized");
 
   // Exit startup mode - start enforcing configured log levels
   EventLogger::getInstance()->setStartupMode(false);

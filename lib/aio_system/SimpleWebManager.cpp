@@ -35,7 +35,9 @@
 #include "web_pages/DragDropCANConfigPage.h"  // Drag-and-drop CAN configuration
 #include "web_pages/CANInfoJSON.h"  // CAN info JSON data
 #include "web_pages/CANConfigUploadPage.h"  // CAN config upload page
+#include "web_pages/TouchFriendlyCANSnifferPage.h"  // CAN Sniffer page
 #include "CANConfigStorage.h"  // LittleFS storage for custom CAN config
+#include "CANSniffer.h"  // CAN bus sniffer
 #include <ArduinoJson.h>
 #include <QNEthernet.h>
 #include "ESP32Interface.h"
@@ -279,6 +281,59 @@ void SimpleWebManager::setupRoutes() {
     // CAN config status endpoint
     httpServer.on("/api/can/config/status", [this](EthernetClient& client, const String& method, const String& query) {
         handleCANConfigStatus(client);
+    });
+
+    // CAN Sniffer page and API
+    httpServer.on("/cansniffer", [this](EthernetClient& client, const String& method, const String& query) {
+        sendCANSnifferPage(client);
+    });
+
+    httpServer.on("/cansniffer/enable", [this](EthernetClient& client, const String& method, const String& query) {
+        if (method == "POST") {
+            handleCANSnifferEnable(client, query);
+        } else {
+            SimpleHTTPServer::send(client, 405, "text/plain", "Method Not Allowed");
+        }
+    });
+
+    httpServer.on("/cansniffer/bus", [this](EthernetClient& client, const String& method, const String& query) {
+        if (method == "POST") {
+            handleCANSnifferBus(client, query);
+        } else {
+            SimpleHTTPServer::send(client, 405, "text/plain", "Method Not Allowed");
+        }
+    });
+
+    httpServer.on("/cansniffer/clear", [this](EthernetClient& client, const String& method, const String& query) {
+        if (method == "POST") {
+            handleCANSnifferClear(client);
+        } else {
+            SimpleHTTPServer::send(client, 405, "text/plain", "Method Not Allowed");
+        }
+    });
+
+    httpServer.on("/cansniffer/log", [this](EthernetClient& client, const String& method, const String& query) {
+        if (method == "GET") {
+            handleCANSnifferLog(client);
+        } else {
+            SimpleHTTPServer::send(client, 405, "text/plain", "Method Not Allowed");
+        }
+    });
+
+    httpServer.on("/cansniffer/status", [this](EthernetClient& client, const String& method, const String& query) {
+        if (method == "GET") {
+            handleCANSnifferStatus(client);
+        } else {
+            SimpleHTTPServer::send(client, 405, "text/plain", "Method Not Allowed");
+        }
+    });
+
+    httpServer.on("/cansniffer/stats", [this](EthernetClient& client, const String& method, const String& query) {
+        if (method == "GET") {
+            handleCANSnifferStats(client);
+        } else {
+            SimpleHTTPServer::send(client, 405, "text/plain", "Method Not Allowed");
+        }
     });
 
     // OTA upload endpoint
@@ -1447,6 +1502,88 @@ void SimpleWebManager::handleCANConfigStatus(EthernetClient& client) {
         doc["custom"] = false;
         doc["version"] = "2.0";  // Default version from PROGMEM
     }
+
+    String json;
+    serializeJson(doc, json);
+    SimpleHTTPServer::sendJSON(client, json);
+}
+
+// CAN Sniffer handlers
+
+void SimpleWebManager::sendCANSnifferPage(EthernetClient& client) {
+    SimpleHTTPServer::send(client, 200, "text/html", FPSTR(CANSnifferPage::PAGE));
+}
+
+void SimpleWebManager::handleCANSnifferEnable(EthernetClient& client, const String& query) {
+    // Parse state parameter: ?state=1 or ?state=0
+    int stateIdx = query.indexOf("state=");
+    if (stateIdx >= 0) {
+        char stateChar = query.charAt(stateIdx + 6);
+        bool enabled = (stateChar == '1');
+        globalCANSniffer.setMasterEnabled(enabled);
+
+        LOG_INFO(EventSource::NETWORK, "CAN Sniffer %s", enabled ? "enabled" : "disabled");
+        SimpleHTTPServer::send(client, 200, "text/plain", enabled ? "OK" : "OK");
+    } else {
+        SimpleHTTPServer::send(client, 400, "text/plain", "Bad Request");
+    }
+}
+
+void SimpleWebManager::handleCANSnifferBus(EthernetClient& client, const String& query) {
+    // Parse num parameter: ?num=1, ?num=2, or ?num=3
+    int numIdx = query.indexOf("num=");
+    if (numIdx >= 0) {
+        char busChar = query.charAt(numIdx + 4);
+        uint8_t busNum = busChar - '0';
+        if (busNum >= 1 && busNum <= 3) {
+            globalCANSniffer.setSelectedBus(busNum);
+            LOG_INFO(EventSource::NETWORK, "CAN Sniffer bus set to CAN%d", busNum);
+            SimpleHTTPServer::send(client, 200, "text/plain", "OK");
+        } else {
+            SimpleHTTPServer::send(client, 400, "text/plain", "Invalid bus");
+        }
+    } else {
+        SimpleHTTPServer::send(client, 400, "text/plain", "Bad Request");
+    }
+}
+
+void SimpleWebManager::handleCANSnifferClear(EthernetClient& client) {
+    globalCANSniffer.clear();
+    LOG_INFO(EventSource::NETWORK, "CAN Sniffer buffer cleared");
+    SimpleHTTPServer::send(client, 200, "text/plain", "OK");
+}
+
+void SimpleWebManager::handleCANSnifferLog(EthernetClient& client) {
+    // Allocate buffer for log text (max 32KB to avoid memory issues)
+    const size_t bufferSize = 32768;
+    char* buffer = (char*)malloc(bufferSize);
+    if (!buffer) {
+        SimpleHTTPServer::send(client, 500, "text/plain", "Memory error");
+        return;
+    }
+
+    size_t lineCount = globalCANSniffer.getFormattedText(buffer, bufferSize, true);
+
+    // Send as plain text
+    SimpleHTTPServer::send(client, 200, "text/plain; charset=utf-8", buffer);
+
+    free(buffer);
+}
+
+void SimpleWebManager::handleCANSnifferStatus(EthernetClient& client) {
+    StaticJsonDocument<128> doc;
+    doc["enabled"] = globalCANSniffer.isMasterEnabled();
+    doc["bus"] = globalCANSniffer.getSelectedBus();
+
+    String json;
+    serializeJson(doc, json);
+    SimpleHTTPServer::sendJSON(client, json);
+}
+
+void SimpleWebManager::handleCANSnifferStats(EthernetClient& client) {
+    StaticJsonDocument<128> doc;
+    doc["count"] = globalCANSniffer.getMessageCount();
+    doc["buffer"] = globalCANSniffer.getBufferUsage();
 
     String json;
     serializeJson(doc, json);

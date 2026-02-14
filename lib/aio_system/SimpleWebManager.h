@@ -68,6 +68,7 @@ private:
     void sendAnalogWorkSwitchPage(EthernetClient& client);
     void sendCANConfigPage(EthernetClient& client);
     void sendCANConfigUploadPage(EthernetClient& client);
+    void sendCANSnifferPage(EthernetClient& client);
 
     // API handlers
     void handleApiStatus(EthernetClient& client);
@@ -85,7 +86,15 @@ private:
     void handleCANConfigUpload(EthernetClient& client);
     void handleCANConfigRestore(EthernetClient& client);
     void handleCANConfigStatus(EthernetClient& client);
-    
+
+    // CAN Sniffer handlers
+    void handleCANSnifferEnable(EthernetClient& client, const String& query);
+    void handleCANSnifferBus(EthernetClient& client, const String& query);
+    void handleCANSnifferClear(EthernetClient& client);
+    void handleCANSnifferLog(EthernetClient& client);
+    void handleCANSnifferStatus(EthernetClient& client);
+    void handleCANSnifferStats(EthernetClient& client);
+
     // UM98x GPS configuration handlers
     void sendUM98xConfigPage(EthernetClient& client);
     void handleUM98xRead(EthernetClient& client);
