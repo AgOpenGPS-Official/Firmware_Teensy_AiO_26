@@ -38,6 +38,7 @@
 #include "Version.h"
 #include "ESP32Interface.h"
 #include "CANConfigStorage.h"
+#include "GVRETTCPServer.h"
 #include "SimpleScheduler/SimpleScheduler.h"
 
 // Flash ID for OTA verification - must match FLASH_ID in FlashTxx.h
@@ -56,6 +57,7 @@ ADProcessor adProcessor;
 PWMProcessor pwmProcessor;
 // LEDManagerFSM ledManagerFSM; // Global instance already defined in LEDManagerFSM.cpp
 SimpleWebManager webManager;
+GVRETTCPServer gvretServer;
 MotorDriverInterface *motorPTR = nullptr; // Motor driver still uses factory pattern
 
 // Loop timing diagnostics
@@ -485,6 +487,13 @@ void setup()
     LOG_ERROR(EventSource::SYSTEM, "WebManager FAILED");
   }
 
+  // Initialize GVRET TCP Server
+  if (gvretServer.begin()) {
+    LOG_INFO(EventSource::SYSTEM, "GVRET TCP Server initialized on ports 2201-2203");
+  } else {
+    LOG_ERROR(EventSource::SYSTEM, "GVRET TCP Server FAILED");
+  }
+
   // Exit startup mode - start enforcing configured log levels
   EventLogger::getInstance()->setStartupMode(false);
 
@@ -533,6 +542,9 @@ void setup()
   scheduler.addTask(SimpleScheduler::HZ_100, taskAutosteer, "Autosteer");
   scheduler.addTask(SimpleScheduler::HZ_100, taskWebHandleClient, "Web Client");
   scheduler.addTask(SimpleScheduler::HZ_100, taskWebBroadcastTelemetry, "Web Telemetry");
+  scheduler.addTask(SimpleScheduler::HZ_100, []{
+    gvretServer.handleClients();
+  }, "GVRET Server");
 
   // Add 50Hz tasks (motor control)
   scheduler.addTask(SimpleScheduler::HZ_50, taskMotorDriver, "Motor Driver");
@@ -550,7 +562,7 @@ void setup()
   }, "CommandHandler");
 
   LOG_INFO(EventSource::SYSTEM, "SimpleScheduler initialized with %d tasks",
-           5 + 8 + 3 + 1 + 4); // EVERY_LOOP + 100Hz + 50Hz + 10Hz (NAVProcess now async)
+           5 + 8 + 4 + 1 + 4); // EVERY_LOOP + 100Hz + 50Hz + 10Hz (NAVProcess now async, added GVRET)
 
   // Display access information
   localIP = Ethernet.localIP();  // Reuse existing variable
