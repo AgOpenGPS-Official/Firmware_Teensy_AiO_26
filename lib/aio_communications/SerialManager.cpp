@@ -97,15 +97,6 @@ bool SerialManager::initializeSerialPorts()
     return true;
 }
 
-// Device detection handled by NAVProcessor
-
-void SerialManager::processESP32()
-{
-    // DEPRECATED - ESP32 processing now handled by ESP32Interface
-    // This method kept for compatibility but does nothing
-}
-
-
 bool SerialManager::isGPS1Bridged() const
 {
 #if defined(USB_DUAL_SERIAL) || defined(USB_TRIPLE_SERIAL)
@@ -185,21 +176,6 @@ void SerialManager::sendToRS232(uint8_t *data, uint16_t length)
 void SerialManager::sendToESP32(uint8_t *data, uint16_t length)
 {
     SerialESP32.write(data, length);
-}
-
-void SerialManager::processESP32PGN(uint8_t *data, uint8_t length)
-{
-    // ESP32 PGN processing - placeholder for network forwarding
-    // This will send PGN data to AgIO via UDP when network is available
-    LOG_DEBUG(EventSource::NETWORK, "ESP32 PGN received, length: %d", length);
-}
-
-bool SerialManager::validatePGNHeader(uint8_t *data, uint8_t length)
-{
-    if (length < 2)
-        return false;
-
-    return (data[0] == 128 && data[1] == 129);
 }
 
 int32_t SerialManager::getGPSBaudRate() const

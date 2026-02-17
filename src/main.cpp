@@ -4,7 +4,7 @@
 // You should have received a copy of the GNU General Public License along with Firmware_Teensy_AiO-New-Dawn. If not, see <https://www.gnu.org/licenses/>.
 // Like most Arduino code, portions of this are based on other open source Arduino code with a compatiable license.
 
-// main.cpp - Updated section with motor driver testing
+// main.cpp - Entry point, setup() and loop()
 #include "Arduino.h"
 #include <QNEthernet.h>
 #include "QNetworkBase.h"
@@ -14,7 +14,7 @@
 #include "SerialManager.h"
 #include "SerialGlobals.h"
 #include "GNSSProcessor.h"
-#include "IMUProcessor.h" // Add this include
+#include "IMUProcessor.h"
 #include "NAVProcessor.h"
 #include "I2CManager.h"
 #include "CANManager.h"
@@ -29,7 +29,6 @@
 #include "KickoutMonitor.h"
 #include "LEDManagerFSM.h"
 #include "MachineProcessor.h"
-// SubnetManager functionality moved to QNetworkBase
 #include "EventLogger.h"
 #include "CommandHandler.h"
 #include "PGNProcessor.h"
@@ -38,6 +37,7 @@
 #include "Version.h"
 #include "ESP32Interface.h"
 #include "CANConfigStorage.h"
+#include "GVRETServer.h"
 #include "SimpleScheduler/SimpleScheduler.h"
 
 // Flash ID for OTA verification - must match FLASH_ID in FlashTxx.h
@@ -57,6 +57,11 @@ PWMProcessor pwmProcessor;
 // LEDManagerFSM ledManagerFSM; // Global instance already defined in LEDManagerFSM.cpp
 SimpleWebManager webManager;
 MotorDriverInterface *motorPTR = nullptr; // Motor driver still uses factory pattern
+
+// GVRET TCP servers for SavvyCAN CAN sniffing (bus numbers are 0-indexed for GVRET protocol)
+GVRETServer gvretCAN1(2201, 0);  // Port 2201 → CAN1
+GVRETServer gvretCAN2(2202, 1);  // Port 2202 → CAN2
+GVRETServer gvretCAN3(2203, 2);  // Port 2203 → CAN3
 
 // Loop timing diagnostics
 volatile bool loopTimingEnabled = false;
@@ -211,15 +216,9 @@ void taskLEDUpdate() {
   ledManagerFSM.updateAll();
 }
 
-void taskBufferStats() {
-  serialManager.updateBufferStats();
-}
-
 void taskNetworkCheck() {
   EventLogger::getInstance()->checkNetworkReady();
 }
-
-// taskNAVProcess removed - GPS->UDP now handled by async callback from GNSSProcessor
 
 void taskKickoutSendPGN250() {
   KickoutMonitor::getInstance()->sendPGN250();
@@ -442,6 +441,11 @@ void setup()
   QNEthernetUDPHandler::init();
   LOG_INFO(EventSource::SYSTEM, "AsyncUDP handlers ready");
 
+  // Start GVRET TCP servers for SavvyCAN CAN sniffing
+  gvretCAN1.begin();
+  gvretCAN2.begin();
+  gvretCAN3.begin();
+
   // Initialize AutosteerProcessor
   AutosteerProcessor* autosteerPTR = AutosteerProcessor::getInstance();
   if (autosteerPTR->init()) {
@@ -469,8 +473,6 @@ void setup()
   // Initialize Little Dawn Interface
   esp32Interface.init();
   LOG_INFO(EventSource::SYSTEM, "ESP32Interface initialized");
-
-  // PGN 201 handling is now done by QNetworkBase
 
   // Initialize CommandHandler
   CommandHandler::init();
@@ -540,17 +542,18 @@ void setup()
   // Add 10Hz tasks (UI and status)
   scheduler.addTask(SimpleScheduler::HZ_10, taskLEDUpdate, "LED Update");
   scheduler.addTask(SimpleScheduler::HZ_10, taskNetworkCheck, "Network Check");
-  // NAV Process now handled by async callback from GNSSProcessor
-  // scheduler.addTask(SimpleScheduler::HZ_10, taskNAVProcess, "NAV Process");
   scheduler.addTask(SimpleScheduler::HZ_10, taskKickoutSendPGN250, "PGN250 Send");
-  // Buffer stats disabled - only enable when actually monitoring
-  // scheduler.addTask(SimpleScheduler::HZ_10, taskBufferStats, "Buffer Stats");
   scheduler.addTask(SimpleScheduler::HZ_10, []{
     CommandHandler::getInstance()->process();
   }, "CommandHandler");
+  scheduler.addTask(SimpleScheduler::HZ_10, []{
+    gvretCAN1.loop();
+    gvretCAN2.loop();
+    gvretCAN3.loop();
+  }, "GVRET");
 
   LOG_INFO(EventSource::SYSTEM, "SimpleScheduler initialized with %d tasks",
-           5 + 8 + 3 + 1 + 4); // EVERY_LOOP + 100Hz + 50Hz + 10Hz (NAVProcess now async)
+           5 + 8 + 3 + 1 + 5); // EVERY_LOOP + 100Hz + 50Hz + 10Hz
 
   // Display access information
   localIP = Ethernet.localIP();  // Reuse existing variable
@@ -566,21 +569,6 @@ void setup()
   
   LOG_INFO(EventSource::SYSTEM, "=== System Ready ===");
 }
-
-// Macro for timing a process
-#define TIME_PROCESS(index, code) \
-  if (processTimingEnabled) { \
-    uint32_t start = micros(); \
-    code; \
-    uint32_t elapsed = micros() - start; \
-    processTiming[index].totalTime += elapsed; \
-    processTiming[index].count++; \
-    if (elapsed > processTiming[index].maxTime) { \
-      processTiming[index].maxTime = elapsed; \
-    } \
-  } else { \
-    code; \
-  }
 
 void loop()
 {

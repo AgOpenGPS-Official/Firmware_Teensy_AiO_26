@@ -406,21 +406,11 @@ void MachineProcessor::handlePGN239(uint8_t pgn, const uint8_t* data, size_t len
     // For Phase 1, just log the data we're receiving
     // Log machine control data for Phase 1
     if (len >= 5) {
-        // uint8_t uturn = data[0];   // Byte 5 - not used yet
-        // uint8_t speed = data[1];   // Byte 6 - speed * 10
-        
-        if (len >= 5) {  // Have hydraulic, tram, geo data
+        if (len >= 5) {
             uint8_t hydLift = data[2];   // Byte 7: 0=off, 1=down, 2=up
             uint8_t tram = data[3];      // Byte 8: bit0=right, bit1=left
             uint8_t geoStop = data[4];   // Byte 9: 0=inside, 1=outside
             
-            
-            // Store machine control data
-            // For hydraulic: implement one-shot timer logic
-            // uint8_t prevHydLift = instance->machineState.hydLift;  // Not needed - using lastHydLift instead
-            
-            
-            // Check for state change that should trigger a one-shot timer
             
             // Only process hydraulic if enabled
             if (configManager.getHydraulicLift() && instance->configReceived) {
@@ -592,28 +582,16 @@ void MachineProcessor::handlePGN238(uint8_t pgn, const uint8_t* data, size_t len
     bool isPinActiveHigh = (byte8 & 0x01);  // Bit 0: relay active high/low
     bool hydEnable = (byte8 & 0x02) >> 1;   // Bit 1: hydraulic enable
     
-    uint8_t user1 = data[4];            // Byte 9
-    uint8_t user2 = data[5];            // Byte 10
-    uint8_t user3 = data[6];            // Byte 11
-    uint8_t user4 = data[7];            // Byte 12
-    
     instance->configReceived = true;
-    
+
     LOG_INFO(EventSource::MACHINE, "Machine Config: RaiseTime=%ds, LowerTime=%ds, HydEnable=%d, ActiveHigh=%d (byte8=0x%02X)",
              raiseTime, lowerTime, hydEnable, isPinActiveHigh, byte8);
-    
-    LOG_DEBUG(EventSource::MACHINE, "User values: U1=%d, U2=%d, U3=%d, U4=%d",
-              user1, user2, user3, user4);
-    
+
     // Save to ConfigManager
     configManager.setRaiseTime(raiseTime);
     configManager.setLowerTime(lowerTime);
     configManager.setHydraulicLift(hydEnable);
     configManager.setIsPinActiveHigh(isPinActiveHigh);
-    configManager.setUser1(user1);
-    configManager.setUser2(user2);
-    configManager.setUser3(user3);
-    configManager.setUser4(user4);
     
     // Save to EEPROM
     LOG_INFO(EventSource::MACHINE, "Saving machine configuration to EEPROM...");

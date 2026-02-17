@@ -8,7 +8,7 @@
 #define EEPROM_LAYOUT_H
 
 // EEPROM Version - increment this when EEPROM layout changes
-#define EEPROM_VERSION 111  // Added JD PWM encoder configuration
+#define EEPROM_VERSION 112  // Removed dead config fields (KWAS, INS extras, lowPWM, etc.)
 
 // EEPROM Address Map
 #define EE_VERSION_ADDR      1      // Version number (2 bytes)
@@ -17,7 +17,7 @@
 #define STEER_SETTINGS_ADDR  300    // Steer settings (300-399)
 #define GPS_CONFIG_ADDR      400    // GPS configuration (400-499)
 #define MACHINE_CONFIG_ADDR  500    // Machine configuration (500-599)
-#define KWAS_CONFIG_ADDR     600    // KWAS configuration (600-699)
+// Address 600-699 available (KWAS removed)
 #define INS_CONFIG_ADDR      700    // INS configuration (700-799)
 #define EVENT_CONFIG_ADDR    800    // EventLogger configuration (800-899)
 #define WEB_CONFIG_ADDR      900    // Web interface configuration (900-999)

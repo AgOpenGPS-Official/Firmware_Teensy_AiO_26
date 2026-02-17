@@ -817,9 +817,7 @@ void AutosteerProcessor::handleSteerConfig(uint8_t pgn, const uint8_t* data, siz
     
     uint8_t sett0 = data[0];
     bool invertWAS = bitRead(sett0, 0);
-    bool isRelayActiveHigh = bitRead(sett0, 1);
     bool motorDriveDirection = bitRead(sett0, 2);
-    bool singleInputWAS = bitRead(sett0, 3);
     bool cytronDriver = bitRead(sett0, 4);
     bool steerSwitch = bitRead(sett0, 5);
     bool steerButton = bitRead(sett0, 6);
@@ -875,12 +873,11 @@ void AutosteerProcessor::handleSteerConfig(uint8_t pgn, const uint8_t* data, siz
     
     // Determine motor type from config
     const char* motorType = "Unknown";
-    bool isDanfossConfig = false;
     switch (motorDriverConfig) {
         case 0x00: motorType = cytronDriver ? "Cytron IBT2" : "DRV8701"; break;
-        case 0x01: motorType = "Danfoss"; isDanfossConfig = true; break;
+        case 0x01: motorType = "Danfoss"; break;
         case 0x02: motorType = cytronDriver ? "Cytron IBT2" : "DRV8701"; break;
-        case 0x03: motorType = "Danfoss"; isDanfossConfig = true; break;
+        case 0x03: motorType = "Danfoss"; break;
         case 0x04: motorType = cytronDriver ? "Cytron IBT2" : "DRV8701"; break;
         default: motorType = "Unknown"; break;
     }
@@ -912,7 +909,6 @@ void AutosteerProcessor::handleSteerConfig(uint8_t pgn, const uint8_t* data, siz
     
     // Save config to EEPROM
     configManager.setInvertWAS(invertWAS);
-    configManager.setIsRelayActiveHigh(isRelayActiveHigh);
     configManager.setMotorDriveDirection(motorDriveDirection);
     configManager.setCytronDriver(cytronDriver);
     configManager.setSteerSwitch(steerSwitch);
@@ -995,36 +991,23 @@ void AutosteerProcessor::handleSteerSettings(uint8_t pgn, const uint8_t* data, s
     }
     
     // Parse PGN 252 data directly to local variables
-    uint8_t kp = data[0];  // Raw byte value from AgOpenGPS
+    uint8_t kp = data[0];
     uint8_t highPWM = data[1];
-    uint8_t lowPWM = data[2];
+    // data[2] is lowPWM — sent by AgOpenGPS but unused in steering logic
     uint8_t minPWM = data[3];
-    
-    // V6-NG adjusts lowPWM
-    float temp = (float)minPWM * 1.2;
-    lowPWM = (uint8_t)temp;
-    
     uint8_t steerSensorCounts = data[4];
-    
-    // WAS offset is int16
     int16_t wasOffset = data[5] | (data[6] << 8);
-    
     float ackermanFix = (float)data[7] * 0.01f;
-    
-    // Log all settings at INFO level
-    LOG_INFO(EventSource::AUTOSTEER, "Steer settings: Kp=%d PWM=%d-%d-%d WAS_offset=%d counts=%d Ackerman=%.2f", 
-             kp, minPWM, lowPWM, highPWM, wasOffset, steerSensorCounts, ackermanFix);
-    
-    // Update ADProcessor with WAS calibration values
+
+    LOG_INFO(EventSource::AUTOSTEER, "Steer settings: Kp=%d PWM min=%d high=%d WAS_offset=%d counts=%d Ackerman=%.2f",
+             kp, minPWM, highPWM, wasOffset, steerSensorCounts, ackermanFix);
+
     adProcessor.setWASOffset(wasOffset);
     adProcessor.setWASCountsPerDegree(steerSensorCounts);
-    LOG_INFO(EventSource::AUTOSTEER, "Updated ADProcessor with offset=%d, CPD=%d", 
-             wasOffset, steerSensorCounts);
-    
+
     // Save steer settings to ConfigManager
     configManager.setKp(kp);
     configManager.setHighPWM(highPWM);
-    configManager.setLowPWM(lowPWM);
     configManager.setMinPWM(minPWM);
     configManager.setSteerSensorCounts(steerSensorCounts);
     configManager.setWasOffset(wasOffset);
@@ -1081,11 +1064,6 @@ void AutosteerProcessor::handleSteerData(uint8_t pgn, const uint8_t* data, size_
     
     // Extract status
     uint8_t status = data[2];
-    // Note: Bit 6 (autosteer enable / OSB) is extracted but not used for engagement.
-    // AgOpenGPS currently sends guidance status via bit 0 only; engagement is handled
-    // in process() based on guidanceStatusChanged. Bit 6 is tracked for autosteerEnabled.
-    bool newAutosteerState = (status & 0x40) != 0;  // Bit 6 is autosteer enable
-
     // Track guidance status changes
     static bool firstBroadcast = true;
     bool newGuidanceActive = (status & 0x01) != 0;   // Bit 0 is guidance active
@@ -1119,8 +1097,8 @@ void AutosteerProcessor::handleSteerData(uint8_t pgn, const uint8_t* data, size_
     uint8_t sections1_8 = data[6];
     uint8_t sections9_16 = data[7];
     machineSections = (uint16_t)(sections9_16 << 8 | sections1_8);
-    
-    autosteerEnabled = newAutosteerState;
+
+    autosteerEnabled = (status & 0x40) != 0;  // Bit 6 is autosteer enable
 
     // Send PGN 253 status 1:1 with each PGN254 received from AgOpenGPS
     sendPGN253();
@@ -1273,8 +1251,7 @@ void AutosteerProcessor::updateMotorControl() {
     
     // Calculate angle error
     float angleError = actualAngle - targetAngle;
-    float errorAbs = abs(angleError);
-    
+
     // Get PWM settings from ConfigManager (cached for performance)
     uint8_t kp = configManager.getKp();
     uint8_t highPWM = configManager.getHighPWM();
@@ -1410,20 +1387,6 @@ void AutosteerProcessor::updateMotorControl() {
     if (configManager.getMotorDriveDirection()) {
         motorPWM = -motorPWM;  // Invert if configured
     }
-    
-    // Final PWM limit check - ensure we never exceed highPWM setting
-    // Log current settings for debugging (DEBUG level to avoid spam)
-    static uint32_t lastPWMSettingsLog = 0;
-    if (millis() - lastPWMSettingsLog > 30000) {  // Log every 30 seconds
-        lastPWMSettingsLog = millis();
-        // Note: PWM settings now come from ConfigManager
-        LOG_DEBUG(EventSource::AUTOSTEER, "PWM Settings: highPWM=%d, lowPWM=%d, minPWM=%d", 
-                  configManager.getHighPWM(), configManager.getLowPWM(), configManager.getMinPWM());
-    }
-    
-    // Motor speed is now properly scaled to respect highPWM limit
-    // No additional limiting needed here since we scale by newHighPWM above
-    
     
     // Send to motor
     if (motorPTR) {

@@ -69,10 +69,6 @@ public:
 
     // Device detection handled by NAVProcessor
 
-    // Serial processing methods - Most processing moved to specialized processors
-    // Only ESP32 PGN processing remains here
-    void processESP32();
-
     // Bridge mode management
     bool isGPS1Bridged() const;
     bool isGPS2Bridged() const;
@@ -91,10 +87,6 @@ public:
     int32_t getRS232BaudRate() const;
     int32_t getIMUBaudRate() const;
 
-    // ESP32 PGN handling
-    void processESP32PGN(uint8_t *data, uint8_t length);
-    bool validatePGNHeader(uint8_t *data, uint8_t length);
-
     // Status and debug
     void printSerialStatus();
     void printSerialConfiguration();
@@ -110,9 +102,6 @@ public:
     void updateBufferStats();
 
 private:
-    // Current radio baud rate tracking
-    uint32_t currentRadioBaudRate;
-
     // Peak buffer usage tracking
     struct BufferStats
     {

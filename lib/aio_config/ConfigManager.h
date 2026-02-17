@@ -53,18 +53,6 @@ struct CANSteerConfig {
     uint8_t reserved[1];        // Future expansion
 };
 
-// ConfigManager Pattern for PGN Settings Access
-// ============================================
-// All runtime access to PGN settings should go through ConfigManager methods.
-// Direct access to PGN data structures (e.g., steerSettings, machineConfig)
-// should only be used for:
-// 1. Parsing incoming PGN data
-// 2. Initial loading from ConfigManager to structs
-// 3. Logging what was received
-//
-// This ensures settings can be changed at runtime and take effect immediately.
-// The structs are maintained for backward compatibility and PGN parsing.
-
 class ConfigManager
 {
 private:
@@ -72,14 +60,11 @@ private:
 
     // Steer configuration (EEPROM 200-299)
     bool invertWAS;
-    bool isRelayActiveHigh;
     bool motorDriveDirection;
-    bool singleInputWAS;
     bool cytronDriver;
     bool steerSwitch;
     bool steerButton;
     bool shaftEncoder;
-    bool isDanfoss;
     bool pressureSensor;
     bool currentSensor;
     bool isUseYAxis;
@@ -92,58 +77,31 @@ private:
     // Steer settings (EEPROM 300-399)
     float kp;
     uint8_t highPWM;
-    float lowPWM;
     uint8_t minPWM;
     uint8_t steerSensorCounts;
     int16_t wasOffset;
     float ackermanFix;
 
     // GPS configuration (EEPROM 400-499)
-    uint32_t gpsBaudRate;
-    bool gpsSyncMode;
     bool gpsPassThrough;
-    uint8_t gpsProtocol;
     uint32_t serialRadioBaudRate;  // RTK radio baud rate (4800-921600)
 
     // Machine settings (EEPROM 500-599)
-    uint8_t sectionCount;
     bool hydraulicLift;
-    bool tramlineControl;
-    uint16_t workWidth;
     uint8_t raiseTime;
     uint8_t lowerTime;
     bool isPinActiveHigh;
     bool sectionControlSleepMode;  // If true, onboard SC goes silent when external SC detected
-    uint8_t user1;
-    uint8_t user2;
-    uint8_t user3;
-    uint8_t user4;
 
-    // KWAS configuration (EEPROM 600-699)
-    bool kwasEnabled;
-    uint8_t kwasMode;
-    float kwasGain;
-    uint16_t kwasDeadband;
-    uint8_t kwasFilterLevel;
-
-    // INS configuration (EEPROM 700-1199)
-    bool insEnabled;
-    uint8_t insMode;
-    float insHeadingOffset;
-    float insRollOffset;
-    float insPitchOffset;
-    uint8_t insFilterLevel;
+    // INS configuration (EEPROM 700-799)
     bool insUseFusion;
-    float insVarianceHeading;
-    float insVarianceRoll;
-    float insVariancePitch;
 
     // LED settings
     uint8_t ledBrightness;
-    
+
     // Buzzer settings (0=Quiet, 1=Loud, 2=Off)
     uint8_t buzzerVolume;
-    
+
     // Turn sensor configuration
     uint8_t turnSensorType;      // 0=None, 1=Encoder, 2=Pressure, 3=Current, 4=JD PWM
     uint8_t encoderType;         // 1=Single, 2=Quadrature
@@ -151,17 +109,17 @@ private:
     uint8_t pressureThreshold;   // Pressure sensor threshold
     uint8_t currentThreshold;    // Current sensor threshold
     uint16_t currentZeroOffset;  // Current sensor zero offset
-    
+
     // John Deere PWM encoder configuration
     bool jdPWMEnabled;           // Enable JD PWM mode for pressure input
     uint8_t jdPWMSensitivity;    // JD PWM sensitivity 1-10 (1=least sensitive, 10=most sensitive)
-    
+
     // Analog work switch configuration
     bool analogWorkSwitchEnabled;
     uint8_t workSwitchSetpoint;     // 0-100% stored as 0-100
     uint8_t workSwitchHysteresis;   // 5-25% stored as 5-25
     bool invertWorkSwitch;
-    
+
     // Network configuration
     uint8_t ipAddress[4];
     uint8_t subnet[4];
@@ -169,7 +127,7 @@ private:
     uint8_t dns[4];
     uint8_t destIP[4];
     uint16_t destPort;
-    
+
     // Version control
     uint16_t eeVersion;
 
@@ -190,12 +148,8 @@ public:
     // Steer configuration methods
     bool getInvertWAS() const { return invertWAS; }
     void setInvertWAS(bool value) { invertWAS = value; }
-    bool getIsRelayActiveHigh() const { return isRelayActiveHigh; }
-    void setIsRelayActiveHigh(bool value) { isRelayActiveHigh = value; }
     bool getMotorDriveDirection() const { return motorDriveDirection; }
     void setMotorDriveDirection(bool value) { motorDriveDirection = value; }
-    bool getSingleInputWAS() const { return singleInputWAS; }
-    void setSingleInputWAS(bool value) { singleInputWAS = value; }
     bool getCytronDriver() const { return cytronDriver; }
     void setCytronDriver(bool value) { cytronDriver = value; }
     bool getSteerSwitch() const { return steerSwitch; }
@@ -204,8 +158,6 @@ public:
     void setSteerButton(bool value) { steerButton = value; }
     bool getShaftEncoder() const { return shaftEncoder; }
     void setShaftEncoder(bool value) { shaftEncoder = value; }
-    bool getIsDanfoss() const { return isDanfoss; }
-    void setIsDanfoss(bool value) { isDanfoss = value; }
     bool getPressureSensor() const { return pressureSensor; }
     void setPressureSensor(bool value) { pressureSensor = value; }
     bool getCurrentSensor() const { return currentSensor; }
@@ -228,8 +180,6 @@ public:
     void setKp(float value) { kp = value; }
     uint8_t getHighPWM() const { return highPWM; }
     void setHighPWM(uint8_t value) { highPWM = value; }
-    float getLowPWM() const { return lowPWM; }
-    void setLowPWM(float value) { lowPWM = value; }
     uint8_t getMinPWM() const { return minPWM; }
     void setMinPWM(uint8_t value) { minPWM = value; }
     uint8_t getSteerSensorCounts() const { return steerSensorCounts; }
@@ -241,35 +191,23 @@ public:
 
     // LED configuration
     uint8_t getLEDBrightness() const { return ledBrightness; }
-    void setLEDBrightness(uint8_t value) { 
-        ledBrightness = constrain(value, 5, 100); 
+    void setLEDBrightness(uint8_t value) {
+        ledBrightness = constrain(value, 5, 100);
     }
-    
+
     // Buzzer configuration (0=Quiet, 1=Loud, 2=Off)
     uint8_t getBuzzerVolume() const { return buzzerVolume; }
     void setBuzzerVolume(uint8_t value) { buzzerVolume = (value <= 2) ? value : 1; }
-    
+
     // GPS configuration methods
-    uint32_t getGPSBaudRate() const { return gpsBaudRate; }
-    void setGPSBaudRate(uint32_t value) { gpsBaudRate = value; }
-    bool getGPSSyncMode() const { return gpsSyncMode; }
-    void setGPSSyncMode(bool value) { gpsSyncMode = value; }
     bool getGPSPassThrough() const { return gpsPassThrough; }
     void setGPSPassThrough(bool value) { gpsPassThrough = value; }
-    uint8_t getGPSProtocol() const { return gpsProtocol; }
-    void setGPSProtocol(uint8_t value) { gpsProtocol = value; }
     uint32_t getSerialRadioBaudRate() const { return serialRadioBaudRate; }
     void setSerialRadioBaudRate(uint32_t value) { serialRadioBaudRate = value; }
 
     // Machine configuration methods
-    uint8_t getSectionCount() const { return sectionCount; }
-    void setSectionCount(uint8_t value) { sectionCount = value; }
     bool getHydraulicLift() const { return hydraulicLift; }
     void setHydraulicLift(bool value) { hydraulicLift = value; }
-    bool getTramlineControl() const { return tramlineControl; }
-    void setTramlineControl(bool value) { tramlineControl = value; }
-    uint16_t getWorkWidth() const { return workWidth; }
-    void setWorkWidth(uint16_t value) { workWidth = value; }
     uint8_t getRaiseTime() const { return raiseTime; }
     void setRaiseTime(uint8_t value) { raiseTime = value; }
     uint8_t getLowerTime() const { return lowerTime; }
@@ -278,48 +216,10 @@ public:
     void setIsPinActiveHigh(bool value) { isPinActiveHigh = value; }
     bool getSectionControlSleepMode() const { return sectionControlSleepMode; }
     void setSectionControlSleepMode(bool value) { sectionControlSleepMode = value; }
-    uint8_t getUser1() const { return user1; }
-    void setUser1(uint8_t value) { user1 = value; }
-    uint8_t getUser2() const { return user2; }
-    void setUser2(uint8_t value) { user2 = value; }
-    uint8_t getUser3() const { return user3; }
-    void setUser3(uint8_t value) { user3 = value; }
-    uint8_t getUser4() const { return user4; }
-    void setUser4(uint8_t value) { user4 = value; }
-
-    // KWAS configuration methods
-    bool getKWASEnabled() const { return kwasEnabled; }
-    void setKWASEnabled(bool value) { kwasEnabled = value; }
-    uint8_t getKWASMode() const { return kwasMode; }
-    void setKWASMode(uint8_t value) { kwasMode = value; }
-    float getKWASGain() const { return kwasGain; }
-    void setKWASGain(float value) { kwasGain = value; }
-    uint16_t getKWASDeadband() const { return kwasDeadband; }
-    void setKWASDeadband(uint16_t value) { kwasDeadband = value; }
-    uint8_t getKWASFilterLevel() const { return kwasFilterLevel; }
-    void setKWASFilterLevel(uint8_t value) { kwasFilterLevel = value; }
 
     // INS configuration methods
-    bool getINSEnabled() const { return insEnabled; }
-    void setINSEnabled(bool value) { insEnabled = value; }
-    uint8_t getINSMode() const { return insMode; }
-    void setINSMode(uint8_t value) { insMode = value; }
-    float getINSHeadingOffset() const { return insHeadingOffset; }
-    void setINSHeadingOffset(float value) { insHeadingOffset = value; }
-    float getINSRollOffset() const { return insRollOffset; }
-    void setINSRollOffset(float value) { insRollOffset = value; }
-    float getINSPitchOffset() const { return insPitchOffset; }
-    void setINSPitchOffset(float value) { insPitchOffset = value; }
-    uint8_t getINSFilterLevel() const { return insFilterLevel; }
-    void setINSFilterLevel(uint8_t value) { insFilterLevel = value; }
     bool getINSUseFusion() const { return insUseFusion; }
     void setINSUseFusion(bool value) { insUseFusion = value; }
-    float getINSVarianceHeading() const { return insVarianceHeading; }
-    void setINSVarianceHeading(float value) { insVarianceHeading = value; }
-    float getINSVarianceRoll() const { return insVarianceRoll; }
-    void setINSVarianceRoll(float value) { insVarianceRoll = value; }
-    float getINSVariancePitch() const { return insVariancePitch; }
-    void setINSVariancePitch(float value) { insVariancePitch = value; }
 
     // Turn sensor configuration methods
     uint8_t getTurnSensorType() const { return turnSensorType; }
@@ -334,7 +234,7 @@ public:
     void setCurrentThreshold(uint8_t value) { currentThreshold = value; }
     uint16_t getCurrentZeroOffset() const { return currentZeroOffset; }
     void setCurrentZeroOffset(uint16_t value) { currentZeroOffset = value; }
-    
+
     // John Deere PWM encoder methods
     bool getJDPWMEnabled() const { return jdPWMEnabled; }
     void setJDPWMEnabled(bool value) { jdPWMEnabled = value; }
@@ -374,8 +274,6 @@ public:
     void loadGPSConfig();
     void saveMachineConfig();
     void loadMachineConfig();
-    void saveKWASConfig();
-    void loadKWASConfig();
     void saveINSConfig();
     void loadINSConfig();
     void saveTurnSensorConfig();

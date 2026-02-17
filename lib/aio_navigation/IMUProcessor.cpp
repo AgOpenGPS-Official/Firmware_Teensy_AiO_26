@@ -6,10 +6,10 @@
 
 #include "IMUProcessor.h"
 #include "TM171AiOParser.h"
-#include "PGNUtils.h"
 #include "EventLogger.h"
 #include "QNetworkBase.h"
 #include "ConfigManager.h"
+#include "PGNUtils.h"
 #include "SerialManager.h"
 
 

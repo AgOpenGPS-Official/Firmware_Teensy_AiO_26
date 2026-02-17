@@ -7,6 +7,10 @@
 // TractorCANDriver.cpp - Unified CAN driver implementation
 #include "TractorCANDriver.h"
 #include "CANConfigStorage.h"
+#include "GVRETServer.h"
+
+// GVRET servers (created in main.cpp)
+extern GVRETServer gvretCAN1, gvretCAN2, gvretCAN3;
 
 bool TractorCANDriver::init() {
     // Load configuration from EEPROM
@@ -101,19 +105,28 @@ void* TractorCANDriver::getBusPointer(uint8_t busNum) {
 }
 
 bool TractorCANDriver::readCANMessage(uint8_t busNum, CAN_message_t& msg) {
+    bool result;
     switch (busNum) {
-        case 1: return globalCAN1.read(msg);
-        case 2: return globalCAN2.read(msg);
-        case 3: return globalCAN3.read(msg);
+        case 1: result = globalCAN1.read(msg); break;
+        case 2: result = globalCAN2.read(msg); break;
+        case 3: result = globalCAN3.read(msg); break;
         default: return false;
     }
+    if (result) {
+        switch (busNum) {
+            case 1: gvretCAN1.sendFrame(msg.id, msg.buf, msg.len, msg.flags.extended, false); break;
+            case 2: gvretCAN2.sendFrame(msg.id, msg.buf, msg.len, msg.flags.extended, false); break;
+            case 3: gvretCAN3.sendFrame(msg.id, msg.buf, msg.len, msg.flags.extended, false); break;
+        }
+    }
+    return result;
 }
 
 void TractorCANDriver::writeCANMessage(uint8_t busNum, const CAN_message_t& msg) {
     switch (busNum) {
-        case 1: globalCAN1.write(msg); break;
-        case 2: globalCAN2.write(msg); break;
-        case 3: globalCAN3.write(msg); break;
+        case 1: globalCAN1.write(msg); gvretCAN1.sendFrame(msg.id, msg.buf, msg.len, msg.flags.extended, true); break;
+        case 2: globalCAN2.write(msg); gvretCAN2.sendFrame(msg.id, msg.buf, msg.len, msg.flags.extended, true); break;
+        case 3: globalCAN3.write(msg); gvretCAN3.sendFrame(msg.id, msg.buf, msg.len, msg.flags.extended, true); break;
     }
 }
 

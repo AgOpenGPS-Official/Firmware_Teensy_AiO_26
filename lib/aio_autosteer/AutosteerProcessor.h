@@ -8,8 +8,6 @@
 #define AUTOSTEER_PROCESSOR_H
 
 #include <Arduino.h>
-// PIDController removed - functionality absorbed into AutosteerProcessor
-
 // External pointers
 class ADProcessor;
 extern ADProcessor adProcessor;
@@ -124,10 +122,6 @@ public:
     // Send replies
     void sendHelloReply();
     void sendScanReply();
-    
-    // Button handling
-    void readPhysicalButton();
-    void sendButtonStateToAOG(bool buttonPressed);
     
     // Send PGN 253 status to AgOpenGPS
     void sendPGN253();

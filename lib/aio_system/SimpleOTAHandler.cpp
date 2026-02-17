@@ -34,8 +34,6 @@ bool SimpleOTAHandler::init() {
         return false;
     }
     
-    const char* bufferTypeStr = (bufferType == RAM_BUFFER_TYPE) ? "RAM" : "FLASH";
-    // OTA handler initialized
     return true;
 }
 
