@@ -48,8 +48,16 @@ public:
     // Process all RTCM sources (called from main loop)
     void process();
 
+    // Periodic status logging (called by coordinator)
+    void logPeriodicStatus();
+
     // Initialize the handler
     static void init();
+
+private:
+    uint32_t rtcmPacketCount = 0;
+    IPAddress lastRemoteIP;
+    uint16_t lastRemotePort = 0;
 };
 
 #endif // RTCMProcessor_H_

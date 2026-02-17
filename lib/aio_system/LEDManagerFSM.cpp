@@ -432,14 +432,11 @@ void LEDManagerFSM::updateAll() {
     
     // Update LED hardware (handles blinking)
     update();
-    
-    // Debug logging - align with network status reporting (60 seconds)
-    static uint32_t lastDebugTime = 0;
-    if (millis() - lastDebugTime > 60000) {  // Changed from 5 seconds to 60 seconds
-        LOG_INFO(EventSource::SYSTEM, "LED FSM States - Power:%d GPS:%d Steer:%d IMU:%d", 
-                 powerState, gpsState, steerState, imuState);
-        lastDebugTime = millis();
-    }
+}
+
+void LEDManagerFSM::logPeriodicStatus() {
+    LOG_INFO(EventSource::SYSTEM, "LEDs: Power=%d GPS=%d Steer=%d IMU=%d",
+             powerState, gpsState, steerState, imuState);
 }
 
 void LEDManagerFSM::pulseRTCM() {

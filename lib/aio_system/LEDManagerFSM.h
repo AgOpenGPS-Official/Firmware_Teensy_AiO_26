@@ -101,6 +101,9 @@ public:
     // Pulse functions for blue overlay
     void pulseRTCM();      // 50ms blue pulse for RTCM packet
     void pulseButton();    // 50ms blue pulse for button press
+
+    // Periodic status logging (called by coordinator)
+    void logPeriodicStatus();
     
 private:
     // PCA9685 controller (address defined in I2CManager.h as PCA9685_ADDRESS)

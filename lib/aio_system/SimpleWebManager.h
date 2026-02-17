@@ -44,6 +44,9 @@ public:
     
     // Set system ready state (enables telemetry)
     void setSystemReady(bool ready) { systemReady = ready; }
+
+    // Periodic status logging (passthrough to telemetryWS)
+    void logPeriodicStatus();
     
 private:
     SimpleHTTPServer httpServer;

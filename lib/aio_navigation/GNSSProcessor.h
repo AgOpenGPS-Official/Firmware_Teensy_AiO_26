@@ -270,6 +270,9 @@ public:
 
     // Position callback registration - called immediately when position message parsed
     void setPositionCallback(PositionCallback cb) { onPositionMessage = cb; }
+
+    // Periodic status logging (called by coordinator)
+    void logPeriodicStatus();
 };
 
 // Global instance following established pattern

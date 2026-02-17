@@ -223,10 +223,36 @@ void taskKickoutSendPGN250() {
 }
 
 // 1Hz Tasks (1000ms)
-// Reserved for future slow updates
 
-// 0.2Hz Tasks (5000ms)
-// Reserved for very slow status checks
+void logPeriodicStatus() {
+    static uint32_t lastLog = 0;
+    if (millis() - lastLog < 60000) return;
+    lastLog = millis();
+
+    LOG_INFO(EventSource::SYSTEM, "--- Status (60s) ---");
+
+    // Network (direct from Ethernet API)
+    IPAddress ip = Ethernet.localIP();
+    LOG_INFO(EventSource::NETWORK, "Network: %d.%d.%d.%d, %dMbps, %s",
+             ip[0], ip[1], ip[2], ip[3], Ethernet.linkSpeed(),
+             Ethernet.linkIsFullDuplex() ? "FullDuplex" : "HalfDuplex");
+
+    // WebSocket
+    webManager.logPeriodicStatus();
+
+    // RTCM
+    RTCMProcessor::getInstance()->logPeriodicStatus();
+
+    // GPS
+    gnssProcessor.logPeriodicStatus();
+
+    // LEDs
+    ledManagerFSM.logPeriodicStatus();
+
+    // GVRET
+    LOG_INFO(EventSource::SYSTEM, "GVRET: %s",
+             gvretServer.hasClient() ? "client connected" : "no client");
+}
 
 void setup()
 {
@@ -546,8 +572,11 @@ void setup()
     gvretServer.loop();
   }, "GVRET");
 
+  // Add 1Hz tasks
+  scheduler.addTask(SimpleScheduler::HZ_1, logPeriodicStatus, "Periodic Status");
+
   LOG_INFO(EventSource::SYSTEM, "SimpleScheduler initialized with %d tasks",
-           5 + 8 + 3 + 1 + 5); // EVERY_LOOP + 100Hz + 50Hz + 10Hz
+           5 + 8 + 3 + 1 + 5 + 1); // EVERY_LOOP + 100Hz + 50Hz + 10Hz + 1Hz
 
   // Display access information
   localIP = Ethernet.localIP();  // Reuse existing variable

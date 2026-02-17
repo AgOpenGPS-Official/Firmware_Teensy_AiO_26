@@ -98,13 +98,20 @@ public:
 
     // Set max clients (default 4)
     void setMaxClients(size_t max) { maxClients = max; }
-    
+
+    // Periodic status logging (called by coordinator)
+    void logPeriodicStatus();
+
 private:
     EthernetServer server;
     std::vector<std::unique_ptr<WebSocketClient>> clients;
     size_t maxClients;
     bool running;
-    
+
+    // Performance tracking for logPeriodicStatus()
+    uint32_t perfSendCount = 0;
+    uint32_t perfSendTime = 0;
+
     void acceptNewClients();
     void removeDisconnectedClients();
 };

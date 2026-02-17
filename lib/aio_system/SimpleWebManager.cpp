@@ -1422,6 +1422,10 @@ void SimpleWebManager::handleCANConfigRestore(EthernetClient& client) {
     }
 }
 
+void SimpleWebManager::logPeriodicStatus() {
+    telemetryWS.logPeriodicStatus();
+}
+
 void SimpleWebManager::handleCANConfigStatus(EthernetClient& client) {
     StaticJsonDocument<256> doc;
 

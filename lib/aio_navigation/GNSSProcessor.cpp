@@ -119,14 +119,7 @@ bool GNSSProcessor::processNMEAChar(char c)
     if (processingPaused) {
         return false;
     }
-    
-    // Periodic status logging
-    static uint32_t lastStatusLog = 0;
-    if (millis() - lastStatusLog > 60000) {  // Every minute
-        lastStatusLog = millis();
-        LOG_INFO(EventSource::GNSS, "GNSSProcessor status: passthrough=%d", udpPassthroughEnabled);
-    }
-    
+
     switch (state)
     {
     case WAIT_START:
@@ -772,6 +765,10 @@ bool GNSSProcessor::isDataFresh(uint32_t maxAgeMs) const
     return getDataAge() <= maxAgeMs;
 }
 
+
+void GNSSProcessor::logPeriodicStatus() {
+    LOG_INFO(EventSource::GNSS, "GPS: passthrough=%d", udpPassthroughEnabled);
+}
 
 void GNSSProcessor::printData() const
 {

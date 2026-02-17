@@ -60,18 +60,10 @@ void RTCMProcessor::processRTCM(const uint8_t *data, size_t len, const IPAddress
         // Pulse GPS LED blue for RTCM packet
         ledManagerFSM.pulseRTCM();
 
-        // Log RTCM activity periodically
-        static uint32_t lastRTCMLog = 0;
-        static uint32_t rtcmPacketCount = 0;
+        // Track RTCM activity for periodic status logging
         rtcmPacketCount++;
-
-        if (millis() - lastRTCMLog > 60000)
-        {
-            lastRTCMLog = millis();
-            LOG_INFO(EventSource::NETWORK, "RTCM: %lu packets from %d.%d.%d.%d:%d",
-                     rtcmPacketCount, remoteIP[0], remoteIP[1], remoteIP[2], remoteIP[3], remotePort);
-            rtcmPacketCount = 0;
-        }
+        lastRemoteIP = remoteIP;
+        lastRemotePort = remotePort;
     }
     // No need to delete buffer - QNEthernet handles memory management
 }
@@ -135,6 +127,17 @@ void RTCMProcessor::processRadioRTCM()
         radioDataActive = false;
         LOG_INFO(EventSource::NETWORK, "Radio RTCM data stream stopped");
     }
+}
+
+void RTCMProcessor::logPeriodicStatus()
+{
+    if (rtcmPacketCount > 0) {
+        LOG_INFO(EventSource::NETWORK, "RTCM: %lu packets from %d.%d.%d.%d:%d",
+                 rtcmPacketCount, lastRemoteIP[0], lastRemoteIP[1], lastRemoteIP[2], lastRemoteIP[3], lastRemotePort);
+    } else {
+        LOG_INFO(EventSource::NETWORK, "RTCM: no packets");
+    }
+    rtcmPacketCount = 0;
 }
 
 void RTCMProcessor::process()

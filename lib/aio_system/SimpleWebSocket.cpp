@@ -404,33 +404,29 @@ size_t SimpleWebSocketServer::getClientCount() const {
 }
 
 void SimpleWebSocketServer::broadcastBinary(const uint8_t* data, size_t length) {
-    static uint32_t lastPerfLog = 0;
-    static uint32_t sendCount = 0;
-    static uint32_t sendTime = 0;
-    
     uint32_t start = micros();
-    
+
     for (auto& client : clients) {
         if (client && client->isConnected()) {
             client->sendBinary(data, length);
         }
     }
-    
+
     uint32_t elapsed = micros() - start;
-    sendTime += elapsed;
-    sendCount++;
-    
-    // Log performance every 60 seconds
-    if (millis() - lastPerfLog >= 60000) {
-        if (sendCount > 0) {
-            float avgSendTime = sendTime / (float)sendCount;
-            LOG_INFO(EventSource::NETWORK, "WebSocket broadcast performance: %.1f us/send, %d clients", 
-                     avgSendTime, getClientCount());
-        }
-        lastPerfLog = millis();
-        sendCount = 0;
-        sendTime = 0;
+    perfSendTime += elapsed;
+    perfSendCount++;
+}
+
+void SimpleWebSocketServer::logPeriodicStatus() {
+    if (perfSendCount > 0) {
+        float avgSendTime = perfSendTime / (float)perfSendCount;
+        LOG_INFO(EventSource::NETWORK, "WebSocket: %.1f us/send, %d clients",
+                 avgSendTime, getClientCount());
+    } else {
+        LOG_INFO(EventSource::NETWORK, "WebSocket: idle, %d clients", getClientCount());
     }
+    perfSendCount = 0;
+    perfSendTime = 0;
 }
 
 void SimpleWebSocketServer::broadcastText(const String& text) {

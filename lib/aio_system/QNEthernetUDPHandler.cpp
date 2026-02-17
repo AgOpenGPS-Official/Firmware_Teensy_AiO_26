@@ -141,20 +141,7 @@ void QNEthernetUDPHandler::poll() {
             }
         }
         
-        // If link is up, log periodic status
-        if (currentLinkStatus) {
-            static uint32_t statusCount = 0;
-            statusCount++;
-            
-            // Every 12th check (60 seconds), log detailed status
-            if (statusCount % 12 == 0) {
-                IPAddress localIP = Ethernet.localIP();
-                LOG_INFO(EventSource::NETWORK, "Network status: IP=%d.%d.%d.%d, Link=%d Mbps, FullDuplex=%s", 
-                         localIP[0], localIP[1], localIP[2], localIP[3], 
-                         Ethernet.linkSpeed(), 
-                         Ethernet.linkIsFullDuplex() ? "Yes" : "No");
-            }
-        }
+        // Network status now logged by centralized coordinator in main.cpp
     }
 }
 
