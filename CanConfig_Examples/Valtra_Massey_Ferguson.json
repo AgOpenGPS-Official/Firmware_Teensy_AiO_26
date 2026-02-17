@@ -94,7 +94,7 @@
       "canConfig": {
         "VFilter": "0x0CAC1C13,0x18EF1C32",
         "VSendCurve": "0x0CAD131C",
-        "SendCurve": "0,0,0,0,0,0,0",
+        "SendCurve": "0,255,255,255,255,255,255",
         "SendCurveLoHi": "0,1",
         "VReceiveCurve": "0x0CAC1C13",
         "ReceiveCurveLoHi": "0,1",
