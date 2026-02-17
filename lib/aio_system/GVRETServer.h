@@ -5,8 +5,8 @@
 // Like most Arduino code, portions of this are based on other open source Arduino code with a compatiable license.
 
 // GVRETServer.h - GVRET binary protocol over TCP for SavvyCAN compatibility
-// Each instance serves one CAN bus on a dedicated TCP port.
-// Connect with SavvyCAN → Network Connection (GVRET).
+// Single server on port 23 serves all 3 CAN buses.
+// Bus number is encoded in each frame. Connect with SavvyCAN → Network Connection (GVRET).
 
 #ifndef GVRET_SERVER_H
 #define GVRET_SERVER_H
@@ -18,13 +18,14 @@ using namespace qindesign::network;
 
 class GVRETServer {
 public:
-    GVRETServer(uint16_t port, uint8_t busNum);
+    GVRETServer();
 
     void begin();
     void loop();
 
     // Called from CAN RX/TX path — must be fast
-    void sendFrame(uint32_t id, const uint8_t* data, uint8_t len,
+    // busNum: 0=CAN1, 1=CAN2, 2=CAN3
+    void sendFrame(uint8_t busNum, uint32_t id, const uint8_t* data, uint8_t len,
                    bool extended, bool isTx);
 
     bool hasClient() { return client.connected(); }
@@ -32,8 +33,6 @@ public:
 private:
     EthernetServer server;
     EthernetClient client;
-    uint16_t port;
-    uint8_t busNum;
     bool binaryMode = false;
 
     // Transmit buffer — aggregate frames, flush periodically

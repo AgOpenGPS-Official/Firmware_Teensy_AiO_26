@@ -36,12 +36,12 @@ static constexpr uint16_t BUILD_NUMBER = 6020;
 // Device type: MACCHINA_ESP32 is what SavvyCAN expects for network GVRET
 static constexpr uint8_t DEVICE_TYPE = 7;
 
-GVRETServer::GVRETServer(uint16_t port, uint8_t busNum)
-    : server(port), port(port), busNum(busNum) {}
+GVRETServer::GVRETServer()
+    : server(23) {}
 
 void GVRETServer::begin() {
     server.begin();
-    LOG_INFO(EventSource::SYSTEM, "GVRET server started on port %d (CAN%d)", port, busNum + 1);
+    LOG_INFO(EventSource::SYSTEM, "GVRET server started on port 23 (all CAN buses)");
 }
 
 void GVRETServer::loop() {
@@ -53,7 +53,7 @@ void GVRETServer::loop() {
             binaryMode = false;
             txBufLen = 0;
             state = IDLE;
-            LOG_INFO(EventSource::SYSTEM, "GVRET client connected on port %d", port);
+            LOG_INFO(EventSource::SYSTEM, "SavvyCAN client connected");
         }
         return;  // Nothing else to do without a client
     }
@@ -72,8 +72,8 @@ void GVRETServer::loop() {
     }
 }
 
-void GVRETServer::sendFrame(uint32_t id, const uint8_t* data, uint8_t len,
-                             bool extended, bool isTx) {
+void GVRETServer::sendFrame(uint8_t busNum, uint32_t id, const uint8_t* data,
+                             uint8_t len, bool extended, bool isTx) {
     if (!client.connected() || !binaryMode) return;
 
     size_t needed = 12 + len;  // marker(1) + cmd(1) + ts(4) + id(4) + len_bus(1) + data(len) + cksum(1)
@@ -286,25 +286,30 @@ void GVRETServer::respondDeviceInfo() {
 }
 
 void GVRETServer::respondBusParams() {
-    // Report 2 buses with CAN speed 500000 and enabled
-    // Format: F1 06 + for each bus: enabled(1) + speed(4) = 10 bytes per bus
-    uint8_t resp[12];
+    // Report 3 buses with CAN speed 500000 and enabled
+    // Format: F1 06 + for each bus: enabled(1) + speed(4) = 5 bytes per bus
+    uint8_t resp[17];
     resp[0] = MARKER;
     resp[1] = PROTO_GET_CANBUS_PARAMS;
-    // Bus 0
-    resp[2] = 1;  // enabled
-    // 500000 = 0x0007A120 LE
     uint32_t speed = 500000;
+    // Bus 0 (CAN1)
+    resp[2] = 1;
     resp[3] = speed & 0xFF;
     resp[4] = (speed >> 8) & 0xFF;
     resp[5] = (speed >> 16) & 0xFF;
     resp[6] = (speed >> 24) & 0xFF;
-    // Bus 1
-    resp[7] = 1;  // enabled
+    // Bus 1 (CAN2)
+    resp[7] = 1;
     resp[8] = speed & 0xFF;
     resp[9] = (speed >> 8) & 0xFF;
     resp[10] = (speed >> 16) & 0xFF;
     resp[11] = (speed >> 24) & 0xFF;
+    // Bus 2 (CAN3)
+    resp[12] = 1;
+    resp[13] = speed & 0xFF;
+    resp[14] = (speed >> 8) & 0xFF;
+    resp[15] = (speed >> 16) & 0xFF;
+    resp[16] = (speed >> 24) & 0xFF;
     client.write(resp, sizeof(resp));
 }
 
@@ -314,6 +319,6 @@ void GVRETServer::respondKeepalive() {
 }
 
 void GVRETServer::respondNumBuses() {
-    uint8_t resp[] = {MARKER, PROTO_GET_NUMBUSES, 1};  // 1 bus per server
+    uint8_t resp[] = {MARKER, PROTO_GET_NUMBUSES, 3};  // 3 CAN buses
     client.write(resp, sizeof(resp));
 }

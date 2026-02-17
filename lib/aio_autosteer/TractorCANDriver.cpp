@@ -9,8 +9,8 @@
 #include "CANConfigStorage.h"
 #include "GVRETServer.h"
 
-// GVRET servers (created in main.cpp)
-extern GVRETServer gvretCAN1, gvretCAN2, gvretCAN3;
+// GVRET server (created in main.cpp)
+extern GVRETServer gvretServer;
 
 bool TractorCANDriver::init() {
     // Load configuration from EEPROM
@@ -114,9 +114,9 @@ bool TractorCANDriver::readCANMessage(uint8_t busNum, CAN_message_t& msg) {
     }
     if (result) {
         switch (busNum) {
-            case 1: gvretCAN1.sendFrame(msg.id, msg.buf, msg.len, msg.flags.extended, false); break;
-            case 2: gvretCAN2.sendFrame(msg.id, msg.buf, msg.len, msg.flags.extended, false); break;
-            case 3: gvretCAN3.sendFrame(msg.id, msg.buf, msg.len, msg.flags.extended, false); break;
+            case 1: gvretServer.sendFrame(0, msg.id, msg.buf, msg.len, msg.flags.extended, false); break;
+            case 2: gvretServer.sendFrame(1, msg.id, msg.buf, msg.len, msg.flags.extended, false); break;
+            case 3: gvretServer.sendFrame(2, msg.id, msg.buf, msg.len, msg.flags.extended, false); break;
         }
     }
     return result;
@@ -124,9 +124,9 @@ bool TractorCANDriver::readCANMessage(uint8_t busNum, CAN_message_t& msg) {
 
 void TractorCANDriver::writeCANMessage(uint8_t busNum, const CAN_message_t& msg) {
     switch (busNum) {
-        case 1: globalCAN1.write(msg); gvretCAN1.sendFrame(msg.id, msg.buf, msg.len, msg.flags.extended, true); break;
-        case 2: globalCAN2.write(msg); gvretCAN2.sendFrame(msg.id, msg.buf, msg.len, msg.flags.extended, true); break;
-        case 3: globalCAN3.write(msg); gvretCAN3.sendFrame(msg.id, msg.buf, msg.len, msg.flags.extended, true); break;
+        case 1: globalCAN1.write(msg); gvretServer.sendFrame(0, msg.id, msg.buf, msg.len, msg.flags.extended, true); break;
+        case 2: globalCAN2.write(msg); gvretServer.sendFrame(1, msg.id, msg.buf, msg.len, msg.flags.extended, true); break;
+        case 3: globalCAN3.write(msg); gvretServer.sendFrame(2, msg.id, msg.buf, msg.len, msg.flags.extended, true); break;
     }
 }
 

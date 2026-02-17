@@ -58,10 +58,8 @@ PWMProcessor pwmProcessor;
 SimpleWebManager webManager;
 MotorDriverInterface *motorPTR = nullptr; // Motor driver still uses factory pattern
 
-// GVRET TCP servers for SavvyCAN CAN sniffing (bus numbers are 0-indexed for GVRET protocol)
-GVRETServer gvretCAN1(2201, 0);  // Port 2201 → CAN1
-GVRETServer gvretCAN2(2202, 1);  // Port 2202 → CAN2
-GVRETServer gvretCAN3(2203, 2);  // Port 2203 → CAN3
+// GVRET TCP server for SavvyCAN CAN sniffing (port 23, all 3 buses multiplexed)
+GVRETServer gvretServer;
 
 // Loop timing diagnostics
 volatile bool loopTimingEnabled = false;
@@ -441,10 +439,8 @@ void setup()
   QNEthernetUDPHandler::init();
   LOG_INFO(EventSource::SYSTEM, "AsyncUDP handlers ready");
 
-  // Start GVRET TCP servers for SavvyCAN CAN sniffing
-  gvretCAN1.begin();
-  gvretCAN2.begin();
-  gvretCAN3.begin();
+  // Start GVRET TCP server for SavvyCAN CAN sniffing
+  gvretServer.begin();
 
   // Initialize AutosteerProcessor
   AutosteerProcessor* autosteerPTR = AutosteerProcessor::getInstance();
@@ -547,9 +543,7 @@ void setup()
     CommandHandler::getInstance()->process();
   }, "CommandHandler");
   scheduler.addTask(SimpleScheduler::HZ_10, []{
-    gvretCAN1.loop();
-    gvretCAN2.loop();
-    gvretCAN3.loop();
+    gvretServer.loop();
   }, "GVRET");
 
   LOG_INFO(EventSource::SYSTEM, "SimpleScheduler initialized with %d tasks",
