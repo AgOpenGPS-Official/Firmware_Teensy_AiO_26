@@ -292,8 +292,16 @@ void IMUProcessor::processTM171Data()
         {
             // Update current data structure
             currentData.heading = tm171Parser->getYaw();
-            currentData.pitch = tm171Parser->getPitch();
-            currentData.roll = tm171Parser->getRoll();
+
+            // Apply scaling (x10) and Y-axis swap if configured
+            extern ConfigManager configManager;
+            if (configManager.getIsUseYAxis()) {
+                currentData.pitch = 10.0f * tm171Parser->getRoll();
+                currentData.roll = 10.0f * tm171Parser->getPitch();
+            } else {
+                currentData.pitch = 10.0f * tm171Parser->getPitch();
+                currentData.roll = 10.0f * tm171Parser->getRoll();
+            }
             currentData.yawRate = 0;  // TM171 doesn't provide yaw rate
             currentData.quality = 10; // Assume good quality if data is valid
             currentData.timestamp = millis();

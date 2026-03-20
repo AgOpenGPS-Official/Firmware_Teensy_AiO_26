@@ -8,7 +8,7 @@
 #define VERSION_H
 
 // AiO v26 firmware version
-#define FIRMWARE_VERSION "26.5.1" // Consolidate periodic status logs
+#define FIRMWARE_VERSION "26.5.2" // Fix TM171 roll/pitch 10x scaling
 
 // Teensy board type for OTA identification
 #define TEENSY_BOARD_TYPE "Teensy41"
