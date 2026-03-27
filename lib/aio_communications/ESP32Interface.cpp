@@ -9,6 +9,9 @@
 #include "QNEthernetUDPHandler.h"
 #include "EventLogger.h"
 
+// proxyBuffer in RAM2 (Teensy 4.1 has 512KB RAM2 for DMA/data, free for malloc/new)
+DMAMEM uint8_t ESP32Interface::proxyBuffer[ESP32Interface::PROXY_BUFFER_SIZE + 1];  // +1 guard byte
+
 // Global instance
 ESP32Interface esp32Interface;
 
@@ -73,125 +76,108 @@ void ESP32Interface::sendToESP32(const uint8_t* data, size_t length) {
 }
 
 // Process incoming data from ESP32
+// Normal operation: reads all available bytes into buffer, then processes PGNs and hello.
+// During a proxy request: proxyRequest() calls checkForProxyResponse() directly and
+// processIncomingData() is not called, so 0xFE 0x02 frames are never treated as PGNs.
 void ESP32Interface::processIncomingData() {
+    // During proxy request, checkForProxyResponse() handles all UART reading
+    if (proxyPending) return;
+
     static bool firstByte = true;
-    while (SerialESP32.available()) {
-        uint8_t byte = SerialESP32.read();
-        
-        // Debug: Log first few bytes received
+
+    // Read all available bytes into rxBuffer
+    while (SerialESP32.available() && rxBufferIndex < RX_BUFFER_SIZE) {
+        rxBuffer[rxBufferIndex++] = (uint8_t)SerialESP32.read();
         if (firstByte) {
             LOG_DEBUG(EventSource::SYSTEM, "ESP32Interface: Receiving data from ESP32!");
             firstByte = false;
         }
-        
-        // Add to buffer
-        if (rxBufferIndex < RX_BUFFER_SIZE) {
-            rxBuffer[rxBufferIndex++] = byte;
+    }
+
+    if (rxBufferIndex == 0) return;
+
+    // Skip 0xFE frames (proxy response during unexpected state - just discard)
+    if (rxBuffer[0] == 0xFE) {
+        if (rxBufferIndex >= 2 && rxBuffer[1] == 0x02 && rxBufferIndex >= 4) {
+            uint16_t bodyLen = ((uint16_t)rxBuffer[2] << 8) | rxBuffer[3];
+            if (bodyLen > 48000) bodyLen = 0;
+            size_t frameLen = 4 + bodyLen;
+            if (rxBufferIndex >= frameLen) {
+                LOG_WARNING(EventSource::SYSTEM, "ESP32 RX: Unexpected 0xFE 0x02 frame discarded");
+                size_t remaining = rxBufferIndex - frameLen;
+                if (remaining > 0) memmove(rxBuffer, &rxBuffer[frameLen], remaining);
+                rxBufferIndex = remaining;
+            }
         }
+        return;
+    }
+
+    // Check for hello message
+    checkForHello();
+
+    // Check for complete PGN message
+    // PGN format: [0x80][0x81][Source][PGN][Length][Data...][CRC]
+    if (rxBufferIndex >= 7) {
+        bool foundPGN = false;
+        size_t pgnStart = 0;
         
-        // Check for hello message
-        checkForHello();
-        
-        // Check for complete PGN message
-        // PGN format: [0x80][0x81][Source][PGN][Length][Data...][CRC]
-        if (rxBufferIndex >= 7) {  // Minimum PGN size (header + length + CRC)
-            // Look for PGN header
-            bool foundPGN = false;
-            size_t pgnStart = 0;
-            
-            // Scan buffer for PGN header
-            for (size_t i = 0; i <= rxBufferIndex - 7; i++) {
-                if (rxBuffer[i] == 0x80 && rxBuffer[i + 1] == 0x81) {
-                    // Found potential PGN header
-                    pgnStart = i;
-                    
-                    // Extract message info
-                    // uint8_t source = rxBuffer[i + 2];  // Source ID
-                    // uint8_t pgnId = rxBuffer[i + 3];   // PGN ID
-                    uint8_t dataLength = rxBuffer[i + 4];  // Data length
-                    
-                    // Calculate total message length: header(5) + dataLength + CRC(1)
-                    size_t totalLength = 5 + dataLength + 1;
-                    
-                    // Check if we have the complete message
-                    if ((pgnStart + totalLength) <= rxBufferIndex) {
-                        foundPGN = true;
-                        
-                        // Send complete PGN to UDP9999 broadcast
-                        uint8_t* pgnData = &rxBuffer[pgnStart];
-                        
-                        // Debug log received PGN
-                        uint8_t source = rxBuffer[pgnStart + 2];
-                        uint8_t pgn = rxBuffer[pgnStart + 3];
-                        LOG_DEBUG(EventSource::SYSTEM, "ESP32 RX: PGN=%d, source=%d, len=%zu -> UDP9999", 
-                                      pgn, source, totalLength);
-                        
-                        QNEthernetUDPHandler::sendUDP9999Packet(pgnData, totalLength);
-                        
-                        // Remove processed data from buffer
-                        size_t remaining = rxBufferIndex - (pgnStart + totalLength);
-                        if (remaining > 0) {
-                            memmove(rxBuffer, &rxBuffer[pgnStart + totalLength], remaining);
-                        }
-                        rxBufferIndex = remaining;
-                        
-                        break;  // Process one PGN at a time
-                    } else {
-                        // Debug: Not enough data yet - but this is normal for serial data arriving in chunks
-                        // Only log if the incomplete message persists (not just transient buffering)
-                        static uint32_t incompleteStartTime = 0;
-                        static size_t lastIncompleteSize = 0;
-                        
-                        if (rxBufferIndex != lastIncompleteSize) {
-                            // Size changed, reset timer
-                            incompleteStartTime = millis();
-                            lastIncompleteSize = rxBufferIndex;
-                        }
-                        
-                        // Only log if incomplete for more than 50ms (serial chunks should arrive faster)
-                        if (millis() - incompleteStartTime > 50) {
-                            static uint32_t lastIncompleteLog = 0;
-                            if (millis() - lastIncompleteLog > 1000) {
-                                LOG_DEBUG(EventSource::SYSTEM, "ESP32 RX: Incomplete PGN at %zu, need %zu bytes, have %zu", 
-                                          pgnStart, totalLength, rxBufferIndex - pgnStart);
-                                lastIncompleteLog = millis();
-                            }
+        for (size_t i = 0; i <= rxBufferIndex - 7; i++) {
+            if (rxBuffer[i] == 0x80 && rxBuffer[i + 1] == 0x81) {
+                pgnStart = i;
+                uint8_t dataLength = rxBuffer[i + 4];
+                size_t totalLength = 5 + dataLength + 1;
+                
+                if ((pgnStart + totalLength) <= rxBufferIndex) {
+                    foundPGN = true;
+                    uint8_t* pgnData = &rxBuffer[pgnStart];
+                    uint8_t source = rxBuffer[pgnStart + 2];
+                    uint8_t pgn = rxBuffer[pgnStart + 3];
+                    LOG_DEBUG(EventSource::SYSTEM, "ESP32 RX: PGN=%d, source=%d, len=%zu -> UDP9999",
+                              pgn, source, totalLength);
+                    QNEthernetUDPHandler::sendUDP9999Packet(pgnData, totalLength);
+                    size_t remaining = rxBufferIndex - (pgnStart + totalLength);
+                    if (remaining > 0) memmove(rxBuffer, &rxBuffer[pgnStart + totalLength], remaining);
+                    rxBufferIndex = remaining;
+                    break;
+                } else {
+                    // Incomplete message - wait for more bytes (normal for serial)
+                    static uint32_t incompleteStartTime = 0;
+                    static size_t lastIncompleteSize = 0;
+                    if (rxBufferIndex != lastIncompleteSize) {
+                        incompleteStartTime = millis();
+                        lastIncompleteSize = rxBufferIndex;
+                    }
+                    if (millis() - incompleteStartTime > 50) {
+                        static uint32_t lastIncompleteLog = 0;
+                        if (millis() - lastIncompleteLog > 1000) {
+                            LOG_DEBUG(EventSource::SYSTEM, "ESP32 RX: Incomplete PGN at %zu, need %zu bytes, have %zu",
+                                      pgnStart, totalLength, rxBufferIndex - pgnStart);
+                            lastIncompleteLog = millis();
                         }
                     }
                 }
             }
-            
-            // If no PGN found and buffer is getting full, clear old data
-            if (!foundPGN && rxBufferIndex > RX_BUFFER_SIZE - 100) {
-                LOG_WARNING(EventSource::SYSTEM, "ESP32 RX: Buffer full, clearing old data (had %zu bytes)", rxBufferIndex);
-                // Keep last 100 bytes
-                memmove(rxBuffer, &rxBuffer[rxBufferIndex - 100], 100);
-                rxBufferIndex = 100;
-            }
-            
-            // Reset partial message timer if we found a complete message
-            static uint32_t partialMessageTime = 0;
-            if (foundPGN) {
-                partialMessageTime = 0;  // Reset timer after successful message
-            }
-            
-            // Don't clear partial messages too quickly - serial data might arrive in chunks
-            // Only clear if we've been stuck for a while
-            if (!foundPGN && rxBufferIndex > 0 && rxBuffer[0] == 0x80) {
-                if (partialMessageTime == 0) {
-                    partialMessageTime = millis();
-                }
-                
-                // Wait 100ms for rest of message before clearing
-                if (millis() - partialMessageTime > 100) {
-                    LOG_DEBUG(EventSource::SYSTEM, "ESP32 RX: Clearing partial message after timeout (%zu bytes)", rxBufferIndex);
-                    rxBufferIndex = 0;
-                    partialMessageTime = 0;
-                }
-            } else if (rxBufferIndex == 0 || rxBuffer[0] != 0x80) {
-                // No partial message, reset timer
+        }
+
+        if (!foundPGN && rxBufferIndex > RX_BUFFER_SIZE - 100) {
+            LOG_WARNING(EventSource::SYSTEM, "ESP32 RX: Buffer full, clearing old data (%zu bytes)", rxBufferIndex);
+            memmove(rxBuffer, &rxBuffer[rxBufferIndex - 100], 100);
+            rxBufferIndex = 100;
+        }
+
+        // Clear stuck partial message after 100ms
+        static uint32_t partialMessageTime = 0;
+        if (foundPGN) {
+            partialMessageTime = 0;
+        } else if (rxBufferIndex > 0 && rxBuffer[0] == 0x80) {
+            if (partialMessageTime == 0) partialMessageTime = millis();
+            if (millis() - partialMessageTime > 100) {
+                LOG_DEBUG(EventSource::SYSTEM, "ESP32 RX: Clearing partial message after timeout (%zu bytes)", rxBufferIndex);
+                rxBufferIndex = 0;
                 partialMessageTime = 0;
             }
+        } else {
+            partialMessageTime = 0;
         }
     }
 }
@@ -261,4 +247,118 @@ void ESP32Interface::printStatus() {
     }
     
     LOG_INFO(EventSource::SYSTEM, "  RX buffer: %zu bytes", rxBufferIndex);
+}
+
+// -----------------------------------------------------------------------
+// Proxy: Forward HTTP request to WiFi module via ESP32 UART
+// Protocol: 0xFE 0x01 [len_hi][len_lo][url_without_http://]
+// Response: 0xFE 0x02 [len_hi][len_lo][body...]
+// -----------------------------------------------------------------------
+bool ESP32Interface::proxyRequest(const String& url, String& responseBody) {
+    // Note: we attempt the proxy even if esp32Detected==false (hello may be missed
+    // but UART link might still work). Real failure shows as timeout.
+
+    // Extract host+path from url (remove "http://")
+    String target = url;
+    if (target.startsWith("http://")) target = target.substring(7);
+
+    uint16_t urlLen = (uint16_t)target.length();
+    if (urlLen == 0 || urlLen > 400) {
+        responseBody = "<h2>400 - Ungueltige URL</h2>";
+        return false;
+    }
+
+    // Flush any stale bytes that accumulated in the UART RX hardware buffer
+    // from normal PGN traffic before the proxy request. Without this, leftover
+    // bytes appear as garbage *before* the 0xFE 0x02 response header, causing
+    // the Teensy to wait for a body that never fully arrives.
+    while (SerialESP32.available()) SerialESP32.read();
+
+    // Set proxyPending BEFORE sending so no bytes are missed
+    proxyResponseReady = false;
+    proxyResponseBody = "";
+    proxyPending = true;
+    proxyRequestTime = millis();
+    proxyBufferIndex = 0;  // clear proxy receive buffer
+
+    // Send proxy request frame: 0xFE 0x01 [len_hi][len_lo][url]
+    uint8_t header[4] = { 0xFE, 0x01,
+        (uint8_t)(urlLen >> 8), (uint8_t)(urlLen & 0xFF) };
+    LOG_INFO(EventSource::NETWORK, "Proxy request: %s", target.c_str());
+    SerialESP32.write(header, 4);
+    SerialESP32.write((const uint8_t*)target.c_str(), urlLen);
+    SerialESP32.flush();
+
+    uint32_t deadline = millis() + PROXY_TIMEOUT_MS;
+    while (millis() < deadline) {
+        // Process incoming bytes looking for 0xFE 0x02 response
+        checkForProxyResponse();
+        if (proxyResponseReady) {
+            responseBody = proxyResponseBody;
+            proxyPending = false;
+            return true;
+        }
+        yield();  // Allow interrupts/UART ISR without blocking byte reception
+    }
+
+    proxyPending = false;
+    responseBody = "<h2>504 - Timeout: Modul antwortet nicht</h2><p>" + url + "</p>";
+    LOG_WARNING(EventSource::SYSTEM, "ESP32 Proxy timeout for: %s", target.c_str());
+    return false;
+}
+
+// Check receive buffer for proxy response frame: 0xFE 0x02 [len_hi][len_lo][body]
+void ESP32Interface::checkForProxyResponse() {
+    // Bulk-read all available bytes into the dedicated proxy buffer (much faster
+    // than byte-by-byte which caused ~1 byte/call = thousands of iterations for
+    // a 40 KB page, filling the timeout window without completing reception).
+    if (proxyBufferIndex < PROXY_BUFFER_SIZE) {
+        int avail = SerialESP32.available();
+        if (avail > 0) {
+            size_t space = PROXY_BUFFER_SIZE - proxyBufferIndex;
+            size_t toRead = (size_t)avail < space ? (size_t)avail : space;
+            SerialESP32.readBytes(reinterpret_cast<char*>(proxyBuffer + proxyBufferIndex), toRead);
+            proxyBufferIndex += toRead;
+        }
+    }
+
+    if (!proxyPending) return;
+    if (proxyBufferIndex < 4) return;
+
+    // Search for 0xFE 0x02 header (skip any garbage bytes before the frame)
+    for (size_t i = 0; i <= proxyBufferIndex - 4; i++) {
+        if (proxyBuffer[i] == 0xFE && proxyBuffer[i + 1] == 0x02) {
+            uint16_t bodyLen = ((uint16_t)proxyBuffer[i + 2] << 8) | proxyBuffer[i + 3];
+            if (bodyLen > PROXY_BUFFER_SIZE) bodyLen = PROXY_BUFFER_SIZE;
+
+            // Wait until full body is in buffer
+            if ((i + 4 + (size_t)bodyLen) > proxyBufferIndex) return;
+
+            // Extract body: Teensy WString has no String(char*,len).
+            // The proxyBuffer has PROXY_BUFFER_SIZE bytes. We ensure the byte at
+            // PROXY_BUFFER_SIZE-1 is always a safe write target by declaring the
+            // buffer one byte larger than PROXY_BUFFER_SIZE in the header.
+            // Here we use a guaranteed-safe write position: proxyBuffer[i+4+bodyLen]
+            // which is always < PROXY_BUFFER_SIZE (the guard check above ensures
+            // i+4+bodyLen <= proxyBufferIndex <= PROXY_BUFFER_SIZE-1, so the byte
+            // at i+4+bodyLen is within the allocated array and can be temporarily zeroed).
+            uint8_t savedByte = proxyBuffer[i + 4 + bodyLen];
+            proxyBuffer[i + 4 + bodyLen] = 0;  // temporary null terminator
+            proxyResponseBody = reinterpret_cast<const char*>(proxyBuffer + i + 4);
+            proxyBuffer[i + 4 + bodyLen] = savedByte;  // restore immediately
+            proxyResponseReady = true;
+
+            // Clear proxy buffer
+            proxyBufferIndex = 0;
+
+            LOG_INFO(EventSource::NETWORK, "ESP32 Proxy RX: %u bytes body", bodyLen);
+            return;
+        }
+    }
+
+    // Buffer full but no valid frame found - clear it
+    if (proxyBufferIndex >= PROXY_BUFFER_SIZE) {
+        LOG_WARNING(EventSource::SYSTEM, "ESP32 Proxy: buffer full, no 0xFE02 frame found - clearing");
+        proxyBufferIndex = 0;
+    }
 }

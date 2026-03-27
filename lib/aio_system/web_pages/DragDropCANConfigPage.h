@@ -120,6 +120,18 @@ const char DRAG_DROP_CAN_CONFIG_PAGE[] PROGMEM = R"rawliteral(
             background: white;
         }
 
+        .option-panel {
+            background: white;
+            padding: 12px 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+            display: none;
+        }
+
+        .was-row{display:flex;align-items:center;gap:10px}.was-lbl{flex:1;font-size:13px;font-weight:600;color:#999;line-height:1.3}.was-lbl.l{text-align:right}.was-lbl.r{text-align:left}.was-lbl.on{color:#2c3e50}
+        .tog{position:relative;width:52px;height:28px;flex-shrink:0}.tog input{opacity:0;width:0;height:0;position:absolute}.tog span{position:absolute;inset:0;background:#ccc;border-radius:28px;cursor:pointer;transition:background .3s}.tog span::before{content:'';position:absolute;width:22px;height:22px;left:3px;top:3px;background:#fff;border-radius:50%;transition:transform .3s;box-shadow:0 1px 4px rgba(0,0,0,.25)}.tog input:checked+span{background:#2980b9}.tog input:checked+span::before{transform:translateX(24px)}
+
         .function-pool {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             border-radius: 10px;
@@ -292,13 +304,6 @@ const char DRAG_DROP_CAN_CONFIG_PAGE[] PROGMEM = R"rawliteral(
         .drop-zone.drag-invalid {
             background: #f8d7da;
             border-color: #dc3545;
-            animation: shake 0.5s;
-        }
-
-        @keyframes shake {
-            0%, 100% { transform: translateX(0); }
-            25% { transform: translateX(-5px); }
-            75% { transform: translateX(5px); }
         }
 
         .info-box {
@@ -402,23 +407,8 @@ const char DRAG_DROP_CAN_CONFIG_PAGE[] PROGMEM = R"rawliteral(
             animation: fadeOut 0.3s ease;
         }
 
-        @keyframes slideIn {
-            from {
-                transform: translateX(400px);
-                opacity: 0;
-            }
-            to {
-                transform: translateX(0);
-                opacity: 1;
-            }
-        }
-
-        @keyframes fadeOut {
-            to {
-                opacity: 0;
-                transform: translateX(400px);
-            }
-        }
+        @keyframes slideIn{from{transform:translateX(400px);opacity:0}to{transform:translateX(0);opacity:1}}
+        @keyframes fadeOut{to{opacity:0;transform:translateX(400px)}}
     </style>
 </head>
 <body>
@@ -456,6 +446,14 @@ const char DRAG_DROP_CAN_CONFIG_PAGE[] PROGMEM = R"rawliteral(
                 <option value="8">Lindner</option>
                 <option value="9">Valtra/Massey Ferguson</option>
             </select>
+        </div>
+
+        <div class="option-panel" id="keyaCanWasPanel">
+            <div class="was-row">
+                <span class="was-lbl l" id="wasL">Analog wheel angle sensor (WAS)</span>
+                <label class="tog"><input type="checkbox" id="keyaAllowCANWAS"><span></span></label>
+                <span class="was-lbl r" id="wasR">Steer angle via CAN bus</span>
+            </div>
         </div>
 
         <div class="function-pool">
@@ -555,6 +553,7 @@ const char DRAG_DROP_CAN_CONFIG_PAGE[] PROGMEM = R"rawliteral(
                 2: [],
                 3: []
             },
+            keyaAllowCANWAS: false,
             draggedElement: null,
             draggedFunction: null,
             touchOffset: { x: 0, y: 0 }
@@ -755,6 +754,10 @@ const char DRAG_DROP_CAN_CONFIG_PAGE[] PROGMEM = R"rawliteral(
         document.addEventListener('DOMContentLoaded', async function() {
             await loadCANInfo();
             await loadConfiguration();
+            document.getElementById('keyaAllowCANWAS').addEventListener('change', (e) => {
+                state.keyaAllowCANWAS = !!e.target.checked;
+                updateWASToggleLabels();
+            });
             setupDragAndDrop();
         });
 
@@ -779,8 +782,13 @@ const char DRAG_DROP_CAN_CONFIG_PAGE[] PROGMEM = R"rawliteral(
                         state.busAssignments[i] = functions;
                     }
 
+                    state.keyaAllowCANWAS = !!config.keyaAllowCANWAS;
+                    document.getElementById('keyaAllowCANWAS').checked = state.keyaAllowCANWAS;
+
                     updateFunctionPool();
                     updateAllDropZones();
+                    updateKeyaOptionVisibility();
+                    updateWASToggleLabels();
                     updateInfoBox();
                 }
             } catch (error) {
@@ -801,7 +809,8 @@ const char DRAG_DROP_CAN_CONFIG_PAGE[] PROGMEM = R"rawliteral(
                 can2Function: functionsToBitfield(state.busAssignments[2]),
                 can3Speed: parseInt(document.getElementById('can3Speed').value),
                 can3Name: parseInt(document.getElementById('can3Name').value),
-                can3Function: functionsToBitfield(state.busAssignments[3])
+                can3Function: functionsToBitfield(state.busAssignments[3]),
+                keyaAllowCANWAS: !!state.keyaAllowCANWAS
             };
 
             try {
@@ -847,6 +856,7 @@ const char DRAG_DROP_CAN_CONFIG_PAGE[] PROGMEM = R"rawliteral(
         function onBrandChange() {
             state.selectedBrand = parseInt(document.getElementById('brandSelect').value);
             updateFunctionPool();
+            updateKeyaOptionVisibility();
             updateInfoBox();
         }
 
@@ -873,6 +883,19 @@ const char DRAG_DROP_CAN_CONFIG_PAGE[] PROGMEM = R"rawliteral(
             }
 
             updateFunctionPool();
+            updateKeyaOptionVisibility();
+        }
+
+        function updateKeyaOptionVisibility() {
+            const hasKeyaAssigned = Object.values(state.busAssignments).some(functions => functions.includes('keya'));
+            const panel = document.getElementById('keyaCanWasPanel');
+            panel.style.display = hasKeyaAssigned ? 'block' : 'none';
+        }
+
+        function updateWASToggleLabels() {
+            const on = document.getElementById('keyaAllowCANWAS').checked;
+            document.getElementById('wasL').className = 'was-lbl l' + (on ? '' : ' on');
+            document.getElementById('wasR').className = 'was-lbl r' + (on ? ' on' : '');
         }
 
         // Update function pool based on brand and current assignments
@@ -1164,6 +1187,7 @@ const char DRAG_DROP_CAN_CONFIG_PAGE[] PROGMEM = R"rawliteral(
                 state.busAssignments[busNum].push(funcKey);
                 updateDropZone(busNum);
                 updateFunctionPool();
+                updateKeyaOptionVisibility();
             }
         }
 
@@ -1174,6 +1198,7 @@ const char DRAG_DROP_CAN_CONFIG_PAGE[] PROGMEM = R"rawliteral(
                 state.busAssignments[busNum].splice(index, 1);
                 updateDropZone(busNum);
                 updateFunctionPool();
+                updateKeyaOptionVisibility();
             }
         }
 
@@ -1182,6 +1207,7 @@ const char DRAG_DROP_CAN_CONFIG_PAGE[] PROGMEM = R"rawliteral(
             state.busAssignments[busNum] = [];
             updateDropZone(busNum);
             updateFunctionPool();
+            updateKeyaOptionVisibility();
         }
 
         // Update info box with brand-specific information

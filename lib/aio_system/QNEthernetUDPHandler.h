@@ -32,6 +32,8 @@ private:
     static qindesign::network::EthernetUDP udpPGN;   // For PGN traffic on port 8888
     static qindesign::network::EthernetUDP udpRTCM;  // For RTCM traffic on port 2233
     static qindesign::network::EthernetUDP udpDHCP;  // For DHCP server on port 67
+    static qindesign::network::EthernetUDP udpDNS;   // For DNS server on port 53
+    static qindesign::network::EthernetUDP udpMDNS;  // For multicast DNS on port 5353
     static qindesign::network::EthernetUDP udpSend;  // For sending packets
     
     static bool dhcpServerEnabled;
@@ -43,6 +45,10 @@ private:
     static void handleRTCMPacket(const uint8_t* data, size_t len,
                                 const IPAddress& remoteIP, uint16_t remotePort);
     static void handleDHCPPacket(const uint8_t* data, size_t len,
+                                const IPAddress& remoteIP, uint16_t remotePort);
+    static void handleDNSPacket(const uint8_t* data, size_t len,
+                                const IPAddress& remoteIP, uint16_t remotePort);
+    static void handleMDNSPacket(const uint8_t* data, size_t len,
                                 const IPAddress& remoteIP, uint16_t remotePort);
 };
 

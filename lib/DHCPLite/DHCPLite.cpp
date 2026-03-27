@@ -173,6 +173,82 @@ int DHCPreply(RIP_MSG *packet, int packetSize, byte *serverIP, char *domainName)
   return OPToffset+currLoc;
 } 
 
+// Extract dotted hostname from DNS wire format BODY into a char buffer.
+// DNS wire: 03 'a' 'i' 'o' 03 'a' 'o' 'g' 00  ->  "aio.aog"
+// Returns length of the extracted string (excluding null terminator).
+static int dnsWireToHostname(byte *body, int bodyMaxLen, char *out, int outSize) {
+  int pos = 0;
+  int opos = 0;
+  while (pos < bodyMaxLen && body[pos] != 0 && opos < outSize - 1) {
+    int segLen = body[pos++];
+    if (opos > 0 && opos < outSize - 1) out[opos++] = '.';
+    for (int i = 0; i < segLen && pos < bodyMaxLen && opos < outSize - 1; i++)
+      out[opos++] = tolower(body[pos++]);
+  }
+  out[opos] = '\0';
+  return opos;
+}
+
+int DNSreplyMulti(DNS_MSG *packet, int packetSize, byte *serverIP, const char **serverNames, int nameCount) {
+  if ((packet->opflags & DNS_QR_MASK) != 0) return 0;
+
+  byte BODYoffset = (byte*)packet->BODY-(byte*)packet;
+  packet->opflags |= DNS_QR_MASK;
+
+  if (((packet->opflags & ~DNS_QR_MASK) >> 3) != dnsOpQuery
+   || packet->qdCount != htons(1)) {
+    packet->qdCount = packet->anCount = 0;
+    packet->rarcode = dnsRetNotImplemented;
+    return BODYoffset;
+  }
+
+  // Calculate name length in wire format (for answer placement)
+  int nameLength = packet->BODY[0] + 1;
+  while (packet->BODY[nameLength] != 0
+     && (BODYoffset + nameLength) < packetSize)
+    nameLength += packet->BODY[nameLength] + 1;
+
+  // Extract queried hostname as dotted string
+  char queryName[64];
+  dnsWireToHostname(packet->BODY, packetSize - BODYoffset, queryName, sizeof(queryName));
+
+  // Check DHCP leases first (existing behavior)
+  unsigned long crc = computeChecksum(packet->BODY + 1, nameLength-1);
+  byte lease = getLeaseByHost(crc);
+  if (!lease) lease = getLeaseByHost(computeChecksum(packet->BODY + 1, packet->BODY[0]));
+
+  // Check against server name list
+  byte found = lease;
+  if (!found) {
+    for (int i = 0; i < nameCount; i++) {
+      if (strcasecmp(queryName, serverNames[i]) == 0) {
+        found = 1;
+        break;
+      }
+    }
+  }
+
+  packet->qdCount = packet->anCount = 0;
+
+  if (!found) {
+    packet->rarcode = dnsRetNameError;
+    return BODYoffset;
+  }
+
+  //               type = a    Class In    TTL                     Data Len
+  byte answer[] = {0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04};
+  byte answerOffset = nameLength + 1;
+
+  memcpy(packet->BODY + answerOffset, answer, 10);
+  memcpy(packet->BODY + answerOffset + 4, long2quad(DHCP_LEASETIME), 4);
+  memcpy(packet->BODY + answerOffset + 10, serverIP, 4);
+  packet->BODY[answerOffset + 10 + 3] += lease; // lease starts with 1
+  packet->anCount = htons(1);
+  packet->rarcode = dnsRetNoError;
+
+  return BODYoffset + answerOffset + 14;
+}
+
 int DNSreply(DNS_MSG *packet, int packetSize, byte *serverIP, char *serverName) {
   if ((packet->opflags & DNS_QR_MASK) != 0) return 0; // limited check for DNS Query message
 

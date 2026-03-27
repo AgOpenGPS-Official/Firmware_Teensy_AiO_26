@@ -288,6 +288,7 @@ void ConfigManager::loadAllConfigs()
     loadAnalogWorkSwitchConfig();
     loadMiscConfig();
     loadCANSteerConfig(); // Load CAN configuration
+    loadDNSAliasConfig();  // Load user DNS aliases
 }
 
 void ConfigManager::saveAllConfigs()
@@ -302,6 +303,7 @@ void ConfigManager::saveAllConfigs()
     saveAnalogWorkSwitchConfig();
     saveMiscConfig();
     saveCANSteerConfig(); // Save CAN configuration
+    saveDNSAliasConfig();  // Save user DNS aliases
 }
 
 void ConfigManager::resetToDefaults()
@@ -329,6 +331,8 @@ void ConfigManager::resetToDefaults()
     steerSensorCounts = 30;
     wasOffset = 0;
     ackermanFix = 1.0;
+    pwmFilterAlpha = 90;        // 90% old value, 10% new value
+    pwmMinThresholdPct = 25;    // 25% of minPWM as minimum output threshold
 
     // GPS config defaults
     gpsPassThrough = false;
@@ -339,7 +343,7 @@ void ConfigManager::resetToDefaults()
     raiseTime = 2;
     lowerTime = 4;
     isPinActiveHigh = false;
-    sectionControlSleepMode = false; // Default: onboard SC always active
+    sectionControlSleepMode = false; // Default: onboard section control active
 
     // INS config defaults
     insUseFusion = false;
@@ -403,9 +407,16 @@ void ConfigManager::resetToDefaults()
     canSteerConfig.can3Speed = 0;    // 250k
     canSteerConfig.can3Function = 0; // None
     canSteerConfig.moduleID = 0x1C;  // Default Keya module ID
-    canSteerConfig.reserved[0] = 0;
+    canSteerConfig.reserved[0] = 0;  // Keya CAN-WAS disabled by default
 
     eeVersion = CURRENT_EE_VERSION;
+
+    // DNS alias defaults: gps and steer are pre-configured; slots 2 and 3 are empty.
+    // These can be freely changed or cleared on the /dns-alias settings page.
+    strncpy(dnsAlias[0], "gps",   11); dnsAlias[0][11] = '\0';
+    strncpy(dnsAlias[1], "steer", 11); dnsAlias[1][11] = '\0';
+    dnsAlias[2][0] = '\0';
+    dnsAlias[3][0] = '\0';
 }
 
 bool ConfigManager::checkVersion()
@@ -537,6 +548,10 @@ void ConfigManager::saveMiscConfig()
     EEPROM.put(addr, buzzerVolume);
     addr += sizeof(buzzerVolume);
     EEPROM.put(addr, jdPWMSensitivity);
+    addr += sizeof(jdPWMSensitivity);
+    EEPROM.put(addr, pwmFilterAlpha);
+    addr += sizeof(pwmFilterAlpha);
+    EEPROM.put(addr, pwmMinThresholdPct);
 }
 
 void ConfigManager::loadMiscConfig()
@@ -550,6 +565,10 @@ void ConfigManager::loadMiscConfig()
     addr += sizeof(buzzerVolume);
 
     EEPROM.get(addr, jdPWMSensitivity);
+    addr += sizeof(jdPWMSensitivity);
+    EEPROM.get(addr, pwmFilterAlpha);
+    addr += sizeof(pwmFilterAlpha);
+    EEPROM.get(addr, pwmMinThresholdPct);
 
     // Validate loaded values
     if (ledBrightness < 5 || ledBrightness > 100)
@@ -563,6 +582,15 @@ void ConfigManager::loadMiscConfig()
     if (jdPWMSensitivity < 1 || jdPWMSensitivity > 10)
     {
         jdPWMSensitivity = 5; // Default
+    }
+    if (pwmFilterAlpha > 97)
+    {
+        // Keep alpha below 1.0 so the filter remains responsive and cannot freeze output.
+        pwmFilterAlpha = 90; // Default: 90% old value
+    }
+    if (pwmMinThresholdPct > 100)
+    {
+        pwmMinThresholdPct = 25; // Default: 25% of minPWM
     }
 
     LOG_INFO(EventSource::CONFIG, "Loaded misc config from EEPROM: LED=%d%%, BuzzerVol=%d, JD_PWM=%d",
@@ -705,6 +733,43 @@ void ConfigManager::loadCANSteerConfig()
     // Load the entire struct
     EEPROM.get(addr, canSteerConfig);
 
+    // Reserved flags: currently only bit 0 is used (Keya CAN-WAS option).
+    canSteerConfig.reserved[0] &= 0x01;
+
     LOG_INFO(EventSource::CONFIG, "Loaded CAN Steer config - Brand: %d",
              canSteerConfig.brand);
+}
+
+void ConfigManager::saveDNSAliasConfig()
+{
+    int addr = DNS_ALIAS_CONFIG_ADDR;
+    for (int i = 0; i < 4; i++) {
+        for (int j = 0; j < 12; j++) {
+            EEPROM.put(addr++, dnsAlias[i][j]);
+        }
+    }
+    LOG_DEBUG(EventSource::CONFIG, "Saved DNS aliases: '%s','%s','%s','%s'",
+              dnsAlias[0], dnsAlias[1], dnsAlias[2], dnsAlias[3]);
+}
+
+void ConfigManager::loadDNSAliasConfig()
+{
+    int addr = DNS_ALIAS_CONFIG_ADDR;
+    for (int i = 0; i < 4; i++) {
+        for (int j = 0; j < 12; j++) {
+            EEPROM.get(addr++, dnsAlias[i][j]);
+        }
+        dnsAlias[i][11] = '\0'; // Ensure null termination
+        // Validate: only alphanumeric and hyphen allowed; 0xFF = uninitialized EEPROM
+        for (int j = 0; j < 11; j++) {
+            char c = dnsAlias[i][j];
+            if (c == '\0') break;
+            if (!isalnum((unsigned char)c) && c != '-') {
+                dnsAlias[i][0] = '\0'; // Clear invalid entry
+                break;
+            }
+        }
+    }
+    LOG_DEBUG(EventSource::CONFIG, "Loaded DNS aliases: '%s','%s','%s','%s'",
+              dnsAlias[0], dnsAlias[1], dnsAlias[2], dnsAlias[3]);
 }

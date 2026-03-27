@@ -95,6 +95,10 @@ private:
     bool kickoutActive;
     KickoutReason kickoutReason;
     uint32_t kickoutTime;
+    bool lastKickoutStateForTelemetry;
+    uint32_t currentFreezeStartTime;
+    uint16_t frozenCurrentReading;
+    static constexpr uint32_t POST_KICKOUT_TELEMETRY_MS = 3000;
 
     // Check individual kickout conditions
     bool checkEncoderKickout();

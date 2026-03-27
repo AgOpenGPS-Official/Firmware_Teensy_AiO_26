@@ -178,5 +178,6 @@ enum {
 int DHCPreply(RIP_MSG *packet, int packetSize, byte *serverIP, char *domainName);
 
 int DNSreply(DNS_MSG *packet, int packetSize, byte *serverIP, char *serverName);
+int DNSreplyMulti(DNS_MSG *packet, int packetSize, byte *serverIP, const char **serverNames, int nameCount);
 
 #endif

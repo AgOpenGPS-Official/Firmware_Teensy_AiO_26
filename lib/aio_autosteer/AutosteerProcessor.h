@@ -66,6 +66,10 @@ private:
     uint32_t kickoutTime = 0;            // Time of last kickout
     static constexpr uint32_t KICKOUT_COOLDOWN_MS = 2000; // 2 second cooldown
     KickoutMonitor* kickoutMonitor = nullptr;
+    bool lastKickoutStateForTelemetry = false;
+    uint32_t pwmFreezeStartTime = 0;
+    uint8_t frozenPwmDisplay = 0;
+    static constexpr uint32_t POST_KICKOUT_TELEMETRY_MS = 3000;
     
     // Soft-start motor control
     enum class MotorState {
@@ -87,6 +91,8 @@ private:
     uint16_t softStartDurationMs = 500;     // Duration of soft-start ramp (400-1000ms range)
     uint16_t softAccelDurationMs = 250;     // Duration of soft-acceleration ramp (150-500ms range)
     bool useSineRamp = false;                // Use sine curve (true) or linear ramp (false)
+    int16_t lastPwmDrive = 0;              // Last raw pwmDrive before ramp/inversion, for direction tracking
+    float filteredCommandPwm = 0.0f;       // Global filtered PWM command applied to all motor drivers
     
     // Deferred disarm for AOG OSB handshake
     // When valve/motor not ready, we briefly arm so AOG sees the state change,

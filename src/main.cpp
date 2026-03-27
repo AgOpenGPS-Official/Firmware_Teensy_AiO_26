@@ -318,6 +318,11 @@ void setup()
   
   // Network stack is ready but don't initialize AsyncUDP yet
   LOG_INFO(EventSource::NETWORK, "Network stack initialized");
+
+  // Built-in QNEthernet mDNS is intentionally disabled here.
+  // A custom mDNS responder is started in QNEthernetUDPHandler so we can
+  // answer multiple *.local names (aio.local, wifi.local, sc.local, ...).
+  LOG_INFO(EventSource::NETWORK, "Built-in mDNS disabled (using custom multi-name mDNS responder)");
   
   // Set CAN bus speeds based on configuration
   CANSteerConfig canConfig = configManager.getCANSteerConfig();

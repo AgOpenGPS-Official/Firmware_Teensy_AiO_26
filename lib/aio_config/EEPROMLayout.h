@@ -24,5 +24,6 @@
 #define TURN_SENSOR_CONFIG_ADDR 1000 // Turn sensor configuration (1000-1099)
 #define ANALOG_WORK_SWITCH_ADDR 1100 // Analog work switch configuration (1100-1199)
 #define MISC_CONFIG_ADDR        1200 // Miscellaneous settings (1200-1299)
+#define DNS_ALIAS_CONFIG_ADDR   600  // DNS alias configuration (600-699), was previously KWAS
 
 #endif // EEPROM_LAYOUT_H

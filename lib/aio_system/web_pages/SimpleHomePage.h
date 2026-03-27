@@ -34,6 +34,9 @@ const char SIMPLE_HOME_PAGE[] PROGMEM = R"rawliteral(
             <li><a href='/um98x-config'>UM98x GPS Configuration</a></li>
         </ul>
         
+        <h2>WiFi Module</h2>
+        <div id="module-list" style="margin:10px 0;"></div>
+        
         <h2>System</h2>
         <ul>
             <li><a href='/api/status'>System Status (JSON)</a></li>
@@ -97,8 +100,35 @@ const char SIMPLE_HOME_PAGE[] PROGMEM = R"rawliteral(
             return false;
         }
         
+        // WiFi Module dynamisch laden
+        function loadModules() {
+            fetch('/api/modules')
+                .then(r => r.json())
+                .then(data => {
+                    const list = document.getElementById('module-list');
+                    let html = '';
+                    if (data.esp32Online) {
+                        html += '<div style="display:flex;align-items:flex-start;gap:16px;margin-bottom:8px;">';
+                        html += '<a href="/esp32/" target="_blank" style="min-width:150px;max-width:150px;flex-shrink:0;padding:8px 12px;background:#2563eb;color:white;text-decoration:none;border-radius:6px;font-weight:600;text-align:center;">AiO ESP32 Bridge</a>';
+                        html += '<span style="padding-top:6px;font-size:14px;color:#374151;">WiFi-zu-UART Bridge</span></div>';
+                    }
+                    (data.modules||[]).filter(m=>m.online).forEach(m => {
+                        const path = '/'+(m.path||'').replace(/^\/+|\/+$/g,'')+'/';
+                        html += '<div style="display:flex;align-items:flex-start;gap:16px;margin-bottom:8px;">';
+                        html += '<a href="'+path+'" target="_blank" style="min-width:150px;max-width:150px;flex-shrink:0;padding:8px 12px;background:#2563eb;color:white;text-decoration:none;border-radius:6px;font-weight:600;text-align:center;">'+( m.name||path)+'</a>';
+                        html += '<span style="padding-top:6px;font-size:14px;color:#374151;">'+( m.desc||'')+'</span></div>';
+                    });
+                    if (!data.esp32Online && !(data.modules||[]).some(m=>m.online))
+                        html = '<p style="color:#888;font-size:14px;">No modules connected.</p>';
+                    list.innerHTML = html;
+                })
+                .catch(() => { document.getElementById('module-list').innerHTML='<p style="color:#c00">Failed to load.</p>'; });
+        }
+
         // Connect on page load
         connectWebSocket();
+        loadModules();
+        setInterval(loadModules, 15000);
     </script>
 </body>
 </html>
