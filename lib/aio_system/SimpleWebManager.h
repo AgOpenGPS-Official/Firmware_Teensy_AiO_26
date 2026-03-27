@@ -18,6 +18,7 @@
 #include "LogWebSocket.h"
 #include "Version.h"
 #include "EEPROMLayout.h"
+#include "ESP32Interface.h"
 
 // Language support
 enum class WebLanguage {
@@ -74,6 +75,7 @@ private:
 
     // API handlers
     void handleApiStatus(EthernetClient& client);
+    void handleApiModules(EthernetClient& client);
     void handleApiRestart(EthernetClient& client);
     void handleEventLoggerConfig(EthernetClient& client, const String& method);
     void handleLogViewerData(EthernetClient& client);
@@ -88,12 +90,27 @@ private:
     void handleCANConfigUpload(EthernetClient& client);
     void handleCANConfigRestore(EthernetClient& client);
     void handleCANConfigStatus(EthernetClient& client);
+
+    // Catch-all proxy handler: forwards unknown paths to WiFi modules via ESP32 UART
+    // Registered as the onNotFound handler in SimpleHTTPServer
+    void handleModuleProxy(EthernetClient& client, const String& path, const String& query);
+
+    // Sticky-module tracking: remembers which module was last accessed through the proxy
+    // so that sub-resources (CSS, JS, images) without a module prefix in
+    // the path are automatically forwarded to the same module.
+    String lastActiveModuleName;     // Clean name of the active module (e.g. "SectionControl")
+    String lastActiveModulePrefix;   // URL prefix of the active module (e.g. "/SectionControl/")
+    uint32_t lastModuleAccessTime;   // Timestamp of last module access (millis)
     
     // UM98x GPS configuration handlers
     void sendUM98xConfigPage(EthernetClient& client);
     void handleUM98xRead(EthernetClient& client);
     void handleUM98xWrite(EthernetClient& client);
-    
+
+    // DNS alias page and API
+    void sendDNSAliasPage(EthernetClient& client);
+    void handleDNSAliasConfig(EthernetClient& client, const String& method);
+
     // Helper to parse POST body
     String readPostBody(EthernetClient& client);
     

@@ -21,6 +21,9 @@ using namespace qindesign::network;
 // Route handler function type - simplified for efficiency
 using HTTPHandler = std::function<void(EthernetClient&, const String&, const String&)>;
 
+// Not-found handler: receives client, full path, query string
+using HTTPNotFoundHandler = std::function<void(EthernetClient&, const String&, const String&)>;
+
 // Simple HTTP server optimized for PROGMEM content
 class SimpleHTTPServer {
 public:
@@ -34,6 +37,14 @@ public:
     
     // Route registration - only GET and POST supported
     void on(const String& path, HTTPHandler handler);
+
+    // Optional catch-all handler for unmatched routes (module proxy etc.)
+    void onNotFound(HTTPNotFoundHandler handler) { notFoundHandler = handler; }
+
+    // Register additional hostnames (without ".aog") that resolve to the Teensy's own interface.
+    // By default "aio", "gps", "steer", "wifi" are owned. Call this to add user-configured aliases
+    // so that e.g. "board.aog" serves the Teensy's own pages instead of the module proxy.
+    void addOwnedHostname(const String& name);
     
     // Server info
     bool isRunning() const { return running; }
@@ -53,8 +64,11 @@ private:
     
     EthernetServer server;
     std::vector<Route> routes;
+    std::vector<String> ownedHostnames;  // Extra shortnames that serve the Teensy's own pages
     uint16_t serverPort;
     bool running;
+    HTTPNotFoundHandler notFoundHandler;  // optional catch-all for module proxy
+    String hostHeader;  // Host header from current request (for virtual hosting)
     
     // Request parsing
     bool parseRequest(EthernetClient& client, String& method, String& path, String& query);

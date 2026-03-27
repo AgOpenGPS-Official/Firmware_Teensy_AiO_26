@@ -648,23 +648,50 @@ void AutosteerProcessor::process() {
     }
 
     // Always update current angle reading (needed for PGN253 even when autosteer is off)
-    // CAN WAS priority: use CAN curve when TractorCAN is active and receiving data
+    // CAN WAS priority applies only to real tractor valve systems.
+    // For TractorCAN+Keya, keep analog/Fusion WAS as primary angle source.
+    uint8_t angleSource = 0;  // 0=analog, 1=fusion, 2=can-curve
+    bool isTractorCANKeya = false;
+    bool valveDataReceived = false;
+    bool allowKeyaCANWAS = false;
     if (motorPTR && motorPTR->getType() == MotorDriverType::TRACTOR_CAN) {
         TractorCANDriver* tractorCAN = static_cast<TractorCANDriver*>(motorPTR);
-        if (tractorCAN && tractorCAN->isValveDataReceived()) {
+        isTractorCANKeya = (tractorCAN && tractorCAN->hasKeyaMotor());
+        valveDataReceived = (tractorCAN && tractorCAN->isValveDataReceived());
+        CANSteerConfig canConfig = configManager.getCANSteerConfig();
+        allowKeyaCANWAS = (canConfig.reserved[0] & 0x01) != 0;
+        if (tractorCAN && ((!isTractorCANKeya) || allowKeyaCANWAS) && tractorCAN->isValveDataReceived()) {
             // CAN WAS available — use it as primary source
             int16_t canCurve = tractorCAN->getActualCurve();
             float scale = tractorCAN->getCurveScale();
             currentAngle = (float)canCurve / scale;
+            angleSource = 2;
         } else if (configManager.getINSUseFusion() && wheelAngleFusionPtr && wheelAngleFusionPtr->isHealthy()) {
             currentAngle = wheelAngleFusionPtr->getFusedAngle();
+            angleSource = 1;
         } else {
             currentAngle = adProcessor.getWASAngle();
+            angleSource = 0;
         }
     } else if (configManager.getINSUseFusion() && wheelAngleFusionPtr && wheelAngleFusionPtr->isHealthy()) {
         currentAngle = wheelAngleFusionPtr->getFusedAngle();
+        angleSource = 1;
     } else {
         currentAngle = adProcessor.getWASAngle();
+        angleSource = 0;
+    }
+
+    static uint8_t lastAngleSource = 255;
+    if (angleSource != lastAngleSource) {
+        lastAngleSource = angleSource;
+        const char* sourceName = (angleSource == 2) ? "CAN curve" :
+                                 (angleSource == 1) ? "Fusion" : "Analog WAS";
+        LOG_INFO(EventSource::AUTOSTEER,
+                 "Wheel angle source: %s (tractorCANKeya=%d, valveData=%d, keyaCANWAS=%d)",
+                 sourceName,
+                 isTractorCANKeya ? 1 : 0,
+                 valveDataReceived ? 1 : 0,
+                 allowKeyaCANWAS ? 1 : 0);
     }
     
     // Apply Ackerman fix to current angle if it's negative (left turn)
@@ -1145,7 +1172,19 @@ void AutosteerProcessor::sendPGN253() {
     int16_t actualSteerAngle = (int16_t)(actualAngle * 100.0f);  // Actual angle * 100
     int16_t heading = 0;            // Deprecated - sent by GNSS
     int16_t roll = 0;               // Deprecated - sent by GNSS  
-    uint8_t pwmDisplay = (uint8_t)abs(motorPWM);  // Already in 0-255 range
+    uint8_t livePwmDisplay = (uint8_t)abs(motorPWM);  // Already in 0-255 range
+    bool kickoutActiveNow = (kickoutMonitor && kickoutMonitor->hasKickout());
+
+    // Freeze PWM telemetry at kickout so AgOpenGPS can display the causal value briefly.
+    if (kickoutActiveNow && !lastKickoutStateForTelemetry) {
+        frozenPwmDisplay = livePwmDisplay;
+        pwmFreezeStartTime = millis();
+    }
+    lastKickoutStateForTelemetry = kickoutActiveNow;
+
+    bool inPostKickoutWindow = (pwmFreezeStartTime != 0) &&
+                               ((uint32_t)(millis() - pwmFreezeStartTime) < POST_KICKOUT_TELEMETRY_MS);
+    uint8_t pwmDisplay = (kickoutActiveNow || inPostKickoutWindow) ? frozenPwmDisplay : livePwmDisplay;
     
     // Build switch byte
     // Bit 0: work switch (inverted)
@@ -1208,6 +1247,7 @@ void AutosteerProcessor::updateMotorControl() {
         // Transition: Disable motor
         motorState = MotorState::DISABLED;
         motorPWM = 0;
+        filteredCommandPwm = 0.0f;
         if (motorPTR) {
             motorPTR->enable(false);
             motorPTR->setPWM(0);
@@ -1294,9 +1334,10 @@ void AutosteerProcessor::updateMotorControl() {
         }
 
         // Check for hard acceleration - soften if needed
+        // Use lastPwmDrive (pre-ramp, pre-inversion) so the check is not corrupted by the ramp value or direction inversion
         uint8_t accelThreshold = (uint8_t)((highPWM - minPWM) * ACCEL_THRESHOLD_RATIO);
         if ((abs(pwmDrive) > (highPWM - accelThreshold)) &&
-            (abs(motorPWM) < (minPWM + accelThreshold)) &&
+            (abs(lastPwmDrive) < (minPWM + accelThreshold)) &&
             (motorState == MotorState::NORMAL_CONTROL)) {
             motorState = MotorState::SOFT_ACCEL;
             softStartBeginTime = millis();
@@ -1304,7 +1345,8 @@ void AutosteerProcessor::updateMotorControl() {
         }
 
         // Check for direction change - if so, enter soft-start again
-        if (((motorPWM > 0 && pwmDrive < 0) || (motorPWM < 0 && pwmDrive > 0)) &&
+        // Use lastPwmDrive (pre-ramp, pre-inversion) to avoid false triggers from ramp or motorDriveDirection inversion
+        if (((lastPwmDrive > 0 && pwmDrive < 0) || (lastPwmDrive < 0 && pwmDrive > 0)) &&
             (abs(pwmDrive) > (minPWM + DIRECTION_CHANGE_THRESHOLD)) &&
             (motorState == MotorState::NORMAL_CONTROL)) {
             motorState = MotorState::SOFT_START;
@@ -1312,7 +1354,9 @@ void AutosteerProcessor::updateMotorControl() {
             LOG_DEBUG(EventSource::AUTOSTEER, "Direction change detected - entering soft start mode");
         }
 
-        // Store final PWM value
+        // Store final PWM value and save raw pwmDrive for next cycle's direction/accel checks
+        // lastPwmDrive is saved BEFORE ramp and BEFORE motorDriveDirection inversion
+        lastPwmDrive = pwmDrive;
         motorPWM = pwmDrive;
         
         // Log the PWM calculation periodically
@@ -1360,11 +1404,9 @@ void AutosteerProcessor::updateMotorControl() {
                 // Apply ramp to motor PWM
                 int16_t originalPWM = motorPWM;
                 motorPWM = (int16_t)((float)motorPWM * rampValue);
-
-                // Enforce minimum PWM threshold if motor should be moving
-                if (originalPWM != 0 && abs(motorPWM) < minPWM) {
-                    motorPWM = (originalPWM > 0) ? minPWM : -minPWM;
-                }
+                // Note: no minPWM clamping here - pwmDrive already includes minPWM,
+                // so the ramp naturally passes through minPWM proportionally.
+                // Clamping would bypass the smooth ramp from 0.
 
                 softStartRampValue = rampValue;
 
@@ -1387,20 +1429,35 @@ void AutosteerProcessor::updateMotorControl() {
     if (configManager.getMotorDriveDirection()) {
         motorPWM = -motorPWM;  // Invert if configured
     }
+
+    int16_t filteredMotorPwm = motorPWM;
+    float alpha = configManager.getPwmFilterAlpha() / 100.0f;
+    // Keep alpha below 1.0 to ensure the command can still move toward new targets.
+    if (alpha > 0.97f) {
+        alpha = 0.97f;
+    }
+    filteredCommandPwm = alpha * filteredCommandPwm + (1.0f - alpha) * (float)motorPWM;
+
+    float threshold = (float)configManager.getMinPWM() * configManager.getPwmMinThresholdPct() / 100.0f;
+    if (fabsf(filteredCommandPwm) < threshold) {
+        filteredMotorPwm = 0;
+    } else {
+        filteredMotorPwm = (int16_t)constrain((int)filteredCommandPwm, -255, 255);
+    }
     
     // Send to motor
     if (motorPTR) {
         // Only enable motor if not in disabled state
         if (motorState != MotorState::DISABLED) {
             motorPTR->enable(true);
-            motorPTR->setPWM(motorPWM);
+            motorPTR->setPWM(filteredMotorPwm);
             
             // Debug log to confirm PWM is being sent
             static uint32_t lastMotorCmdLog = 0;
             if (millis() - lastMotorCmdLog > 1000) {
                 lastMotorCmdLog = millis();
-                LOG_DEBUG(EventSource::AUTOSTEER, "Sending to motor: PWM=%d, State=%d", 
-                          motorPWM, (int)motorState);
+                LOG_DEBUG(EventSource::AUTOSTEER, "Sending to motor: rawPWM=%d filteredPWM=%d filter=%.1f%% State=%d", 
+                          motorPWM, filteredMotorPwm, alpha * 100.0f, (int)motorState);
             }
         }
         
@@ -1462,6 +1519,7 @@ void AutosteerProcessor::emergencyStop() {
     
     // Reset motor state
     motorState = MotorState::DISABLED;
+    filteredCommandPwm = 0.0f;
     
     // Disable motor immediately
     motorPWM = 0;

@@ -50,7 +50,7 @@ struct CANSteerConfig {
     uint8_t can3Name = 0;       // 0=None, 1=V_Bus, 2=K_Bus, 3=ISO_Bus
 
     uint8_t moduleID = 0x1C;    // Module ID for protocols that need it
-    uint8_t reserved[1];        // Future expansion
+    uint8_t reserved[1];        // Bit 0: allow CAN curve as WAS source for Keya mode
 };
 
 class ConfigManager
@@ -81,6 +81,8 @@ private:
     uint8_t steerSensorCounts;
     int16_t wasOffset;
     float ackermanFix;
+    uint8_t pwmFilterAlpha;        // Low-pass filter coefficient (0-97 = 0%-97% old value), default 90
+    uint8_t pwmMinThresholdPct;    // Minimum output threshold as % of minPWM (0-100), default 25
 
     // GPS configuration (EEPROM 400-499)
     bool gpsPassThrough;
@@ -91,7 +93,8 @@ private:
     uint8_t raiseTime;
     uint8_t lowerTime;
     bool isPinActiveHigh;
-    bool sectionControlSleepMode;  // If true, onboard SC goes silent when external SC detected
+    // Internal storage flag: true means onboard section control is inactive (sleep).
+    bool sectionControlSleepMode;
 
     // INS configuration (EEPROM 700-799)
     bool insUseFusion;
@@ -133,6 +136,11 @@ private:
 
     // CAN Steer configuration
     CANSteerConfig canSteerConfig;
+
+    // DNS alias configuration (EEPROM DNS_ALIAS_CONFIG_ADDR)
+    // Up to 4 user-configurable shortnames (without ".aog") that resolve to the Teensy IP.
+    // Example: "board" → board.aog → 192.168.5.126
+    char dnsAlias[4][12];  // max 11 chars + null terminator each
 
     // Initialization tracking
     bool initialized;
@@ -188,6 +196,10 @@ public:
     void setWasOffset(int16_t value) { wasOffset = value; }
     float getAckermanFix() const { return ackermanFix; }
     void setAckermanFix(float value) { ackermanFix = value; }
+    uint8_t getPwmFilterAlpha() const { return pwmFilterAlpha; }
+    void setPwmFilterAlpha(uint8_t value) { pwmFilterAlpha = constrain(value, 0, 97); }
+    uint8_t getPwmMinThresholdPct() const { return pwmMinThresholdPct; }
+    void setPwmMinThresholdPct(uint8_t value) { pwmMinThresholdPct = value; }
 
     // LED configuration
     uint8_t getLEDBrightness() const { return ledBrightness; }
@@ -295,6 +307,14 @@ public:
     void setCANSteerConfig(const CANSteerConfig& config);
     void saveCANSteerConfig();
     void loadCANSteerConfig();
+
+    // DNS alias configuration methods
+    const char* getDNSAlias(uint8_t idx) const { return (idx < 4) ? dnsAlias[idx] : ""; }
+    void setDNSAlias(uint8_t idx, const char* value) {
+        if (idx < 4) { strncpy(dnsAlias[idx], value, 11); dnsAlias[idx][11] = 0; }
+    }
+    void saveDNSAliasConfig();
+    void loadDNSAliasConfig();
 };
 
 #endif // CONFIGMANAGER_H_

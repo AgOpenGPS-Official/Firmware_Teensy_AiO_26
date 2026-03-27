@@ -355,6 +355,8 @@ void TractorCANDriver::processKeyaMessage(const CAN_message_t& msg) {
 
         int16_t currentRaw = (int16_t)((msg.buf[4] << 8) | msg.buf[5]);
         motorCurrent = (uint16_t)abs(currentRaw);
+    float newCurrentX32 = float(motorCurrent) * 32.0f;
+    motorCurrentX32 = motorCurrentX32 * 0.9f + newCurrentX32 * 0.1f;
 
         motorErrorCode = (uint16_t)((msg.buf[6] << 8) | msg.buf[7]);
 
@@ -367,6 +369,70 @@ void TractorCANDriver::processKeyaMessage(const CAN_message_t& msg) {
         lastSteerReadyTime = millis();
         lastHeartbeat = millis();
     }
+}
+
+bool TractorCANDriver::checkKeyaMotorSlip() {
+    if (!hasKeyaFunction()) {
+        return false;
+    }
+
+    static uint8_t slipCounter = 0;
+    static float lastCommandedRPM = 0.0f;
+    static uint32_t lastSpeedChangeTime = 0;
+
+    float rpmDelta = commandedRPM - lastCommandedRPM;
+    if (rpmDelta < 0.0f) {
+        rpmDelta = -rpmDelta;
+    }
+    if (rpmDelta > 5.0f) {
+        lastSpeedChangeTime = millis();
+        lastCommandedRPM = commandedRPM;
+        slipCounter = 0;
+    }
+
+    if (millis() - lastSpeedChangeTime < 50) {
+        return false;
+    }
+
+    if (!heartbeatValid || !enabled) {
+        slipCounter = 0;
+        return false;
+    }
+
+    if (motorErrorCode != 0 && motorErrorCode != 0x4001) {
+        uint8_t errorLow = motorErrorCode & 0xFF;
+        uint8_t errorHigh = (motorErrorCode >> 8) & 0xFF;
+        if (errorLow > 1 || errorHigh > 0) {
+            LOG_WARNING(EventSource::AUTOSTEER, "Keya motor error code: 0x%04X", motorErrorCode);
+            return true;
+        }
+    }
+
+    float error = actualRPM - commandedRPM;
+    if (error < 0.0f) {
+        error = -error;
+    }
+    float commandMagnitude = commandedRPM;
+    if (commandMagnitude < 0.0f) {
+        commandMagnitude = -commandMagnitude;
+    }
+
+    if (error > commandMagnitude + SLIP_RPM_TOLERANCE) {
+        slipCounter++;
+        if (slipCounter >= SLIP_COUNT_THRESHOLD) {
+            LOG_WARNING(EventSource::AUTOSTEER,
+                        "Keya motor slip detected! Counter=%d Cmd=%.1f Act=%.1f Error=%.1f",
+                        slipCounter, commandedRPM, actualRPM, error);
+            return true;
+        }
+    } else {
+        if (slipCounter > 0) {
+            LOG_DEBUG(EventSource::AUTOSTEER, "Keya slip counter reset (was %d)", slipCounter);
+        }
+        slipCounter = 0;
+    }
+
+    return false;
 }
 
 void TractorCANDriver::sendKeyaCommands() {
@@ -1028,7 +1094,7 @@ MotorStatus TractorCANDriver::getStatus() const {
         status.actualPWM = targetPWM;
     }
 
-    status.currentDraw = 0.0f;  // No current sensing via CAN
+    status.currentDraw = hasKeyaFunction() ? motorCurrentX32 : 0.0f;
 
     // Only report error if we're enabled and trying to steer but no connection
     status.hasError = enabled && !steerReady;

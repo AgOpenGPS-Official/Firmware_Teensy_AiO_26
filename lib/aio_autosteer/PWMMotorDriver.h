@@ -25,7 +25,7 @@ private:
     // PWM parameters  
     static constexpr uint32_t PWM_FREQUENCY = 75;  // Hz - Matching test code frequency
     static constexpr uint16_t PWM_MAX = 256;  // Note: 256 is special - puts pin in Hi-Z
-    
+
     
     // Current sensing
     bool hasCurrentSense;

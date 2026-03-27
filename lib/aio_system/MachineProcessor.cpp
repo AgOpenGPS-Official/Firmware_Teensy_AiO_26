@@ -336,9 +336,9 @@ void MachineProcessor::handleBroadcastPGN(uint8_t pgn, const uint8_t* data, size
         return;
     }
 
-    // Check if onboard section control should respond
+    // Respond only when onboard section control is active.
     if (!instance->isOnboardSectionControlActive()) {
-        // Sleep mode active - don't respond to hello or scan requests
+        // Inactive mode: do not reply to hello or scan requests.
         return;
     }
 
@@ -831,19 +831,13 @@ void MachineProcessor::loadMachineConfig() {
 }
 
 bool MachineProcessor::isOnboardSectionControlActive() const {
-    // Check if section control sleep mode is enabled
+    // Internal flag is stored as sleep mode.
     if (!configManager.getSectionControlSleepMode()) {
-        return true;  // Sleep mode disabled - always active
+        return true;  // Sleep mode off -> onboard section control active.
     }
 
-    // Sleep mode enabled - check for external section control activity
-    // External SC is detected if we've recently received PGN 239 from a non-zero source
-    // This is a simple heuristic: if PGN 239 comes from external source, we sleep
-    // Note: This could be enhanced to track source IPs or have explicit wake/sleep commands
-
-    // For now, sleep mode with this simple check:
-    // If sleep mode is enabled, we assume external SC may be active
-    // In practice, users would enable this setting when they have external SC
-    return false;  // Sleep when enabled (external SC assumed active)
+    // Current behavior: sleep mode on means onboard section control is inactive.
+    // Future enhancement could detect external SC activity dynamically.
+    return false;
 }
 

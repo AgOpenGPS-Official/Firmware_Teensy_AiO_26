@@ -57,7 +57,8 @@ const char SIMPLE_DEVICE_SETTINGS_NO_REPLACE[] PROGMEM = R"rawliteral(
                 pwmBrakeMode: document.getElementById('pwmBrakeMode').checked,
                 encoderType: parseInt(document.getElementById('encoderType').value),
                 jdPWMEnabled: document.getElementById('jdPWMEnabled').checked,
-                jdPWMSensitivity: parseInt(document.getElementById('jdPWMSensitivity').value)
+                jdPWMSensitivity: parseInt(document.getElementById('jdPWMSensitivity').value),
+                sectionControlActive: document.getElementById('sectionControlActive').checked
             };
             
             fetch('/api/device/settings', {
@@ -90,9 +91,14 @@ const char SIMPLE_DEVICE_SETTINGS_NO_REPLACE[] PROGMEM = R"rawliteral(
                     document.getElementById('udpPassthrough').checked = data.udpPassthrough || false;
                     document.getElementById('sensorFusion').checked = data.sensorFusion || false;
                     document.getElementById('pwmBrakeMode').checked = data.pwmBrakeMode || false;
+                    document.getElementById('pwmFilterAlpha').value = (data.pwmFilterAlpha !== undefined) ? data.pwmFilterAlpha : 90;
+                    document.getElementById('pwmFilterAlphaValue').textContent = (data.pwmFilterAlpha !== undefined) ? data.pwmFilterAlpha : 90;
+                    document.getElementById('pwmMinThresholdPct').value = (data.pwmMinThresholdPct !== undefined) ? data.pwmMinThresholdPct : 25;
+                    document.getElementById('pwmMinThresholdPctValue').textContent = (data.pwmMinThresholdPct !== undefined) ? data.pwmMinThresholdPct : 25;
                     document.getElementById('encoderType').value = data.encoderType || 1;
                     document.getElementById('jdPWMEnabled').checked = data.jdPWMEnabled || false;
                     document.getElementById('jdPWMSensitivity').value = data.jdPWMSensitivity || 5;
+                    document.getElementById('sectionControlActive').checked = (data.sectionControlActive !== undefined) ? data.sectionControlActive : true;
                     updateSensitivityValue(data.jdPWMSensitivity || 5);
                     toggleJDPWMSensitivity();
                 })
@@ -144,6 +150,36 @@ const char SIMPLE_DEVICE_SETTINGS_NO_REPLACE[] PROGMEM = R"rawliteral(
                 </label>
                 <div class='help-text' style='margin-left: 25px; margin-top: 5px;'>
                     When enabled, PWM motors use brake mode (active braking). When disabled, motors use coast mode (free-wheeling). Only affects PWM-based motor drivers.
+                </div>
+            </div>
+
+            <div class='form-group'>
+                <label for='pwmFilterAlpha'>PWM Low-Pass Filter: <span id='pwmFilterAlphaValue'>90</span>%</label>
+                <input type='range' id='pwmFilterAlpha' name='pwmFilterAlpha' min='0' max='97' value='90'
+                       style='width: 100%;' oninput="document.getElementById('pwmFilterAlphaValue').textContent = this.value">
+                <div class='help-text' style='margin-top: 5px;'>
+                    Smoothing factor for PWM output. Higher = smoother but slower response (90% means 90% old + 10% new per update). Range 0-97%.
+                </div>
+            </div>
+
+            <div class='form-group'>
+                <label for='pwmMinThresholdPct'>PWM Min Threshold: <span id='pwmMinThresholdPctValue'>25</span>% of MinPWM</label>
+                <input type='range' id='pwmMinThresholdPct' name='pwmMinThresholdPct' min='0' max='100' value='25'
+                       style='width: 100%;' oninput="document.getElementById('pwmMinThresholdPctValue').textContent = this.value">
+                <div class='help-text' style='margin-top: 5px;'>
+                    Minimum filtered PWM magnitude required for output. If below this threshold (% of MinPWM), the motor is stopped.
+                </div>
+            </div>
+
+            <h2>Section Control</h2>
+
+            <div class='form-group'>
+                <label class='checkbox-container' style='display: inline-flex; align-items: center;'>
+                    <input type='checkbox' id='sectionControlActive' name='sectionControlActive' style='margin-right: 10px;'>
+                    <span class='checkbox-label' style='white-space: nowrap;'>OnBoard Section Control Active</span>
+                </label>
+                <div class='help-text' style='margin-left: 25px; margin-top: 5px;'>
+                    If enabled, onboard section control responds normally and drives section outputs.
                 </div>
             </div>
             

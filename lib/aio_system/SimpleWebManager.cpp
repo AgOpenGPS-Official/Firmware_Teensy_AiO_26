@@ -35,6 +35,7 @@
 #include "web_pages/DragDropCANConfigPage.h"  // Drag-and-drop CAN configuration
 #include "web_pages/CANInfoJSON.h"  // CAN info JSON data
 #include "web_pages/CANConfigUploadPage.h"  // CAN config upload page
+#include "web_pages/TouchFriendlyDNSAliasPage.h"  // DNS alias configuration page
 #include "CANConfigStorage.h"  // LittleFS storage for custom CAN config
 #include <ArduinoJson.h>
 #include <QNEthernet.h>
@@ -54,7 +55,8 @@ extern GNSSProcessor gnssProcessor;
 SimpleWebManager::SimpleWebManager() :
     isRunning(false),
     currentLanguage(WebLanguage::ENGLISH),
-    systemReady(false) {
+    systemReady(false),
+    lastModuleAccessTime(0) {
 }
 
 SimpleWebManager::~SimpleWebManager() {
@@ -75,7 +77,21 @@ bool SimpleWebManager::begin(uint16_t port) {
 
     // Setup routes first
     setupRoutes();
-    
+
+    // Register user-configured DNS aliases as owned hostnames so that
+    // e.g. "board.aog" serves this board's own web interface (not a module proxy).
+    {
+        ConfigManager* cfg = ConfigManager::getInstance();
+        if (cfg) {
+            for (uint8_t i = 0; i < 4; i++) {
+                const char* alias = cfg->getDNSAlias(i);
+                if (alias && alias[0] != '\0') {
+                    httpServer.addOwnedHostname(String(alias));
+                }
+            }
+        }
+    }
+
     // Start HTTP server
     if (!httpServer.begin(port)) {
         LOG_ERROR(EventSource::NETWORK, "Failed to start HTTP server");
@@ -124,6 +140,94 @@ void SimpleWebManager::handleClient() {
     logWS.handleClient();
 }
 
+
+// -----------------------------------------------------------------------
+// rewriteModuleHtml
+// Rewrites all absolute paths in the HTML of a module page so that
+// sub-pages, AJAX calls, and resources are routed correctly through
+// the Teensy proxy.
+//
+// Rewritten patterns:
+//   href="/..."           -> href="/ModuleName/..."
+//   action="/..."         -> action="/ModuleName/..."
+//   src="/..."            -> src="/ModuleName/..."
+//   window.open('/'       -> window.open('/ModuleName/'
+//   location.href='/      -> location.href='/ModuleName/
+//   sendVal('/?...')      -> sendVal('/ModulName/?...')   AJAX-Calls
+//   sendVal("/?...")      -> sendVal('/ModulName/?...')
+// -----------------------------------------------------------------------
+static void rewriteModuleHtml(String& html, const String& modulePrefix) {
+    if (modulePrefix.length() == 0) return;
+
+    // Replaces pat (ending with "/") with pat-without-last-slash + modulePrefix + "/"
+    // Skips already-rewritten occurrences.
+    auto rewritePattern = [&](const char* patCStr) {
+        String pat = String(patCStr);
+        String skipPat = pat + modulePrefix.substring(1) + "/";
+        int searchFrom = 0;
+        while (true) {
+            int idx = html.indexOf(pat, searchFrom);
+            if (idx < 0) break;
+            if (html.indexOf(skipPat, idx) == idx) { searchFrom = idx + pat.length(); continue; }
+            String replacement = pat.substring(0, pat.length() - 1) + modulePrefix + "/";
+            html = html.substring(0, idx) + replacement + html.substring(idx + pat.length());
+            searchFrom = idx + replacement.length();
+        }
+    };
+
+    rewritePattern("href=\"/");
+    rewritePattern("href='/");
+    rewritePattern("action=\"/");
+    rewritePattern("action='/");
+    rewritePattern("src=\"/");
+    rewritePattern("src='/");
+    rewritePattern("window.open('/");
+    rewritePattern("window.open(\"/");
+    rewritePattern("location.href='/");
+    rewritePattern("location.href=\"/");
+
+    // sendVal AJAX calls: sendVal('/?x') -> sendVal('/ModuleName/?x')
+    auto rewriteSendVal = [&](const char* openQuote) {
+        String pat = String(openQuote) + "/";
+        String skipPat = String(openQuote) + modulePrefix + "/";
+        int searchFrom = 0;
+        while (true) {
+            int idx = html.indexOf(pat, searchFrom);
+            if (idx < 0) break;
+            if (html.indexOf(skipPat, idx) == idx) { searchFrom = idx + pat.length(); continue; }
+            // Avoid double /
+            if (idx + (int)pat.length() < (int)html.length() &&
+                html.charAt(idx + pat.length()) == '/') { searchFrom = idx + pat.length(); continue; }
+            String replacement = String(openQuote) + modulePrefix + "/";
+            html = html.substring(0, idx) + replacement + html.substring(idx + pat.length());
+            searchFrom = idx + replacement.length();
+        }
+    };
+
+    rewriteSendVal("sendVal('");
+    rewriteSendVal("sendVal(\"");
+
+    // fetch() calls: fetch('/...') -> fetch('/ModuleName/...')
+    auto rewriteFetch = [&](const char* openQuote) {
+        String pat = String("fetch(") + openQuote + "/";
+        String skipPat = String("fetch(") + openQuote + modulePrefix.substring(1) + "/";
+        int searchFrom = 0;
+        while (true) {
+            int idx = html.indexOf(pat, searchFrom);
+            if (idx < 0) break;
+            if (html.indexOf(skipPat, idx) == idx) { searchFrom = idx + pat.length(); continue; }
+            // Avoid double /
+            if (idx + (int)pat.length() < (int)html.length() &&
+                html.charAt(idx + pat.length()) == '/') { searchFrom = idx + pat.length(); continue; }
+            String replacement = String("fetch(") + openQuote + modulePrefix + "/";
+            html = html.substring(0, idx) + replacement + html.substring(idx + pat.length());
+            searchFrom = idx + replacement.length();
+        }
+    };
+    rewriteFetch("'");
+    rewriteFetch("\"");
+}
+
 void SimpleWebManager::setupRoutes() {
     // Home page - now using touch-friendly interface
     httpServer.on("/", [this](EthernetClient& client, const String& method, const String& query) {
@@ -136,9 +240,23 @@ void SimpleWebManager::setupRoutes() {
         SimpleHTTPServer::send(client, 200, "text/css", FPSTR(TOUCH_FRIENDLY_CSS));
     });
     
+    // favicon.ico - return 204 immediately, never call the proxy.
+    // Without this route every browser request for favicon.ico would land in
+    // the module proxy and trigger a 15 s timeout that hangs the browser.
+    httpServer.on("/favicon.ico", [](EthernetClient& client, const String& method, const String& query) {
+        client.print("HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n");
+        client.flush();
+    });
+
     // API status endpoint
     httpServer.on("/api/status", [this](EthernetClient& client, const String& method, const String& query) {
         handleApiStatus(client);
+    });
+
+    // /api/modules -> ESP32 module list (DynModules via PGN 205) via UART proxy
+    // Returns the modules[] array from the ESP32 buildStatusJson()
+    httpServer.on("/api/modules", [this](EthernetClient& client, const String& method, const String& query) {
+        handleApiModules(client);
     });
     
     // EventLogger page
@@ -299,6 +417,16 @@ void SimpleWebManager::setupRoutes() {
     httpServer.on("/gps", [this](EthernetClient& client, const String& method, const String& query) {
         sendUM98xConfigPage(client);
     });
+
+    // DNS alias configuration page
+    httpServer.on("/dns-alias", [this](EthernetClient& client, const String& method, const String& query) {
+        sendDNSAliasPage(client);
+    });
+
+    // DNS alias configuration API
+    httpServer.on("/api/dns-alias/config", [this](EthernetClient& client, const String& method, const String& query) {
+        handleDNSAliasConfig(client, method);
+    });
     
     // UM98x API endpoints
     httpServer.on("/api/um98x/read", [this](EthernetClient& client, const String& method, const String& query) {
@@ -319,8 +447,284 @@ void SimpleWebManager::setupRoutes() {
     
     // Note: Removed polling endpoints like /api/was/angle and /api/encoder/count
     // These are now provided via WebSocket telemetry
-    
+
+    // -----------------------------------------------------------------------
+    // /wifi/ -> ESP32 web interface (original make_HTML01 page of the ESP32)
+    // Forwarded via UART proxy with HTML rewriting for absolute paths.
+    // No pre-scan: the ESP32 scans itself every 2.5 s; the scan button
+    // on the page can be used manually.
+    // -----------------------------------------------------------------------
+    httpServer.on("/wifi/", [this](EthernetClient& client, const String& method, const String& query) {
+        // ESP32 not connected: return error immediately, no proxy timeout
+        if (!esp32Interface.isDetected()) {
+            SimpleHTTPServer::send(client, 503, "text/html; charset=utf-8",
+                "<h2>503 - ESP32 not connected</h2>"
+                "<p>The ESP32 (AiO WiFi Bridge) is not responding. "
+                "Please check wiring and firmware.</p>"
+                "<p><a href='/'>Back</a></p>");
+            return;
+        }
+
+        // Forward query parameters to the ESP32 (e.g. ?ACTION=3 for the scan button)
+        String targetUrl = "192.168.137.1/";
+        if (query.length() > 0) targetUrl += "?" + query;
+
+        // Send chunked headers immediately so the browser does not time out
+        client.print("HTTP/1.1 200 OK\r\n");
+        client.print("Content-Type: text/html; charset=utf-8\r\n");
+        client.print("Transfer-Encoding: chunked\r\n");
+        client.print("Connection: close\r\n");
+        client.print("\r\n");
+        client.flush();
+
+        // Load original ESP32 home page (make_HTML01)
+        String responseBody;
+        bool ok = esp32Interface.proxyRequest(targetUrl, responseBody);
+
+        if (!ok || responseBody.length() == 0) {
+            // Send error as chunk
+            const char* errBody =
+                "<h2>502 - ESP32 unreachable</h2>"
+                "<p>The ESP32 is not responding to UART requests.</p>";
+            client.printf("%X\r\n", (unsigned int)strlen(errBody));
+            client.print(errBody);
+            client.print("\r\n");
+            client.print("0\r\n\r\n");
+            client.flush();
+            return;
+        }
+
+        // HTML rewriting for the ESP32 bridge page:
+        // Only rewrite sendVal AJAX calls and plain navigation links,
+        // NOT the module buttons (window.open('/sc/') etc.) - those should
+        // run directly through the normal module proxy (/sc/ -> ESP32 -> 192.168.137.71).
+        //
+        // Specifically: sendVal('/?x') -> sendVal('/wifi/?x')
+        //               href="/settings" -> href="/wifi/settings"
+        //               window.open('/serverIndex') -> window.open('/wifi/serverIndex')
+        // NOT: window.open('/sc/') - stays as /sc/ (module proxy)
+        {
+            // Rewrite sendVal calls
+            // sendVal('/?  pattern
+            String pat1 = "sendVal('/?"; 
+            String rep1 = "sendVal('/wifi/?"; 
+            int pos = 0;
+            while ((pos = responseBody.indexOf(pat1, pos)) >= 0) {
+                responseBody = responseBody.substring(0, pos) + rep1 +
+                               responseBody.substring(pos + pat1.length());
+                pos += rep1.length();
+            }
+            // sendValEnc: builds fetch('/?key=val') -> must become '/wifi/?key=val'
+            // sendValEnc('key',val) -> sendVal('/?key='+encodeURIComponent(val))
+            // So the sendVal rewrite above is sufficient - sendValEnc calls sendVal.
+            // Only needed when sendValEnc uses the already-rewritten sendVal.
+            // Since sendValEnc appears as a string literal in the HTML and calls sendVal,
+            // the sendVal rewrite covers it: sendVal('/?x') -> sendVal('/wifi/?x').
+            // Additionally: guard direct fetch() calls inside sendValEnc:
+            responseBody.replace("sendValEnc(", "sendValEncWiFi(");
+            // Insert new helper function in the same script block
+            String encFunc = "<script>function sendValEncWiFi(k,v)"
+                             "{sendVal('/wifi/?'+ k +'='+encodeURIComponent(v));}</script>";
+            int bodyEnd = responseBody.lastIndexOf("</body>");
+            if (bodyEnd >= 0) responseBody = responseBody.substring(0, bodyEnd)
+                                            + encFunc + responseBody.substring(bodyEnd);
+            else responseBody += encFunc;
+            // Rewrite href and window.open for known ESP32 routes
+            static const char* const ESP32_ROUTES[] = {
+                "/settings", "/serverIndex", "/gpio", nullptr
+            };
+            for (int ri = 0; ESP32_ROUTES[ri] != nullptr; ri++) {
+                String r = String(ESP32_ROUTES[ri]);
+                // href exakt
+                responseBody.replace("href=\"" + r + "\"", "href=\"/wifi" + r + "\"");
+                responseBody.replace("href='" + r + "'", "href='/wifi" + r + "'");
+                // window.open: also with query string (?lang=... etc.)
+                responseBody.replace("window.open('" + r + "'" , "window.open('/wifi" + r + "'");
+                responseBody.replace("window.open('" + r + "?" , "window.open('/wifi" + r + "?");
+                responseBody.replace("window.open(\"" + r + "\"", "window.open(\"/wifi" + r + "\"");
+                responseBody.replace("window.open(\"" + r + "?", "window.open(\"/wifi" + r + "?");
+            }
+        }
+
+        // Send body as chunk
+        size_t bodyLen = responseBody.length();
+        client.printf("%X\r\n", (unsigned int)bodyLen);
+        const size_t CHUNK = 1460;
+        size_t sent = 0;
+        const char* bodyData = responseBody.c_str();
+        uint32_t deadline = millis() + 15000;
+        while (sent < bodyLen && millis() < deadline) {
+            size_t toSend = bodyLen - sent;
+            if (toSend > CHUNK) toSend = CHUNK;
+            size_t written = client.write(
+                reinterpret_cast<const uint8_t*>(bodyData + sent), toSend);
+            if (written > 0) { sent += written; }
+            else { Ethernet.loop(); delayMicroseconds(100); }
+        }
+        client.print("\r\n");
+        client.print("0\r\n\r\n");
+        client.flush();
+    });
+
+    // -----------------------------------------------------------------------
+    // Catch-all: all unrecognised paths are handled as module proxy.
+    // Example: http://192.168.5.126/SectionControl/ -> ESP32 -> 192.168.137.71/
+    //          http://192.168.5.126/sc/             -> ESP32 -> 192.168.137.71/
+    // The ESP32 web server knows the module names and their IPs and forwards.
+    // -----------------------------------------------------------------------
+    httpServer.onNotFound([this](EthernetClient& client, const String& path, const String& query) {
+        handleModuleProxy(client, path, query);
+    });
+
     LOG_INFO(EventSource::NETWORK, "Simple web routes configured");
+}
+
+
+// -----------------------------------------------------------------------
+// handleModuleProxy
+// Forwards requests to WiFi modules via ESP32 UART.
+// Routing: module prefix in path -> set sticky; without prefix but
+// sticky active -> assign sub-request to the module; else passthrough.
+// HTML rewriting is applied to all HTML responses from modules.
+// -----------------------------------------------------------------------
+void SimpleWebManager::handleModuleProxy(EthernetClient& client, const String& path, const String& query) {
+    static constexpr uint32_t STICKY_MODULE_TIMEOUT_MS = 30000;
+    static const char ESP32_AP_IP[] = "192.168.137.1";
+
+    // No ESP32 connected: skip blocking proxy call.
+    // Returns a 503 response immediately instead of waiting 15 s.
+    if (!esp32Interface.isDetected()) {
+        SimpleHTTPServer::send(client, 503, "text/html; charset=utf-8",
+            String("<h2>503 - ESP32 not connected</h2>")
+            + "<p>Path: " + path + "</p>"
+            + "<p>The ESP32 (AiO WiFi Bridge) is not responding.</p>"
+            + "<p><a href='/'>Back</a></p>");
+        lastActiveModuleName = "";
+        lastActiveModulePrefix = "";
+        return;
+    }
+
+    String normPath = path;
+    if (!normPath.startsWith("/")) normPath = "/" + normPath;
+    String queryStr = query.length() > 0 ? "?" + query : "";
+
+    String firstSeg = normPath.substring(1);
+    int slashPos = firstSeg.indexOf('/');
+    if (slashPos >= 0) firstSeg = firstSeg.substring(0, slashPos);
+    bool firstSegLooksLikeModule = (firstSeg.length() > 0) && (firstSeg.indexOf('.') < 0);
+
+    // Detect IP address as first segment (e.g. /192.168.137.1 or /192.168.137.71/settings).
+    // IP-path requests must bypass sticky session completely.
+    bool firstSegIsIP = false;
+    if (!firstSegLooksLikeModule && firstSeg.indexOf('.') >= 0) {
+        firstSegIsIP = true;
+        for (int i = 0; i < (int)firstSeg.length(); i++) {
+            char c = firstSeg[i];
+            if (!(c == '.' || (c >= '0' && c <= '9'))) { firstSegIsIP = false; break; }
+        }
+    }
+
+    String forwardUrl;
+    bool doRewrite = false;
+
+    if (firstSegIsIP) {
+        // Direct IP-path: /192.168.137.x/... -> send to Bridge for forwarding.
+        // Bridge self-detects its own IP and serves local pages; other IPs are TCP-proxied.
+        // Never use or update the sticky session for IP-path requests.
+        forwardUrl = String(ESP32_AP_IP) + normPath + queryStr;
+        doRewrite = false;
+        LOG_INFO(EventSource::NETWORK, "Module proxy [IP path]: %s -> http://%s",
+                 path.c_str(), forwardUrl.c_str());
+
+    } else if (firstSegLooksLikeModule) {
+        lastActiveModuleName   = firstSeg;
+        lastActiveModulePrefix = "/" + firstSeg;
+        lastModuleAccessTime   = millis();
+
+        // Special case: /wifi/xxx -> bridge page directly without prefix
+        // /wifi/ route matches only exactly /wifi/; /wifi/settings etc.
+        // land here. The bridge knows /settings, not /wifi/settings.
+        if (firstSeg == "wifi") {
+            // Extract sub-path: /wifi/settings -> /settings
+            // "/wifi" = 5 chars, so from index 5 = "/settings"
+            String subPath = normPath.substring(5); // /wifi/settings -> /settings
+            if (subPath.length() == 0 || subPath[0] != '/') subPath = "/";
+            forwardUrl = String(ESP32_AP_IP) + subPath + queryStr;
+            doRewrite  = true;
+            LOG_INFO(EventSource::NETWORK, "ESP32 proxy [subpath]: %s -> http://%s",
+                     path.c_str(), forwardUrl.c_str());
+        } else {
+            forwardUrl = String(ESP32_AP_IP) + normPath + queryStr;
+            doRewrite  = true;
+            LOG_INFO(EventSource::NETWORK, "Module proxy [%s]: %s -> http://%s",
+                     firstSeg.c_str(), path.c_str(), forwardUrl.c_str());
+        }
+
+    } else if (lastActiveModuleName.length() > 0 &&
+               (millis() - lastModuleAccessTime) < STICKY_MODULE_TIMEOUT_MS) {
+        forwardUrl = String(ESP32_AP_IP) + lastActiveModulePrefix + normPath + queryStr;
+        lastModuleAccessTime = millis();
+        doRewrite  = true;
+        LOG_INFO(EventSource::NETWORK, "Module proxy [%s sticky]: %s -> http://%s",
+                 lastActiveModuleName.c_str(), path.c_str(), forwardUrl.c_str());
+
+    } else {
+        if (lastActiveModuleName.length() > 0) { lastActiveModuleName = ""; lastActiveModulePrefix = ""; }
+        forwardUrl = String(ESP32_AP_IP) + normPath + queryStr;
+        LOG_INFO(EventSource::NETWORK, "Module proxy [no sticky]: %s -> http://%s",
+                 path.c_str(), forwardUrl.c_str());
+    }
+
+    // Content-Type
+    String contentType = "text/html; charset=utf-8";
+    if      (path.endsWith(".css"))   contentType = "text/css";
+    else if (path.endsWith(".js"))    contentType = "application/javascript";
+    else if (path.endsWith(".ico"))   contentType = "image/x-icon";
+    else if (path.endsWith(".png"))   contentType = "image/png";
+    else if (path.endsWith(".jpg"))   contentType = "image/jpeg";
+    else if (path.endsWith(".gif"))   contentType = "image/gif";
+    else if (path.endsWith(".json"))  contentType = "application/json";
+    else if (path.endsWith(".xml"))   contentType = "text/xml";
+    else if (path.endsWith(".svg"))   contentType = "image/svg+xml";
+
+    // Send headers immediately (prevents browser timeout during UART proxy)
+    client.print("HTTP/1.1 200 OK\r\n");
+    client.printf("Content-Type: %s\r\n", contentType.c_str());
+    client.print("Transfer-Encoding: chunked\r\n");
+    client.print("Connection: close\r\n");
+    client.print("\r\n");
+    client.flush();
+
+    // UART-Proxy ausfuehren
+    String responseBody;
+    bool ok = esp32Interface.proxyRequest(forwardUrl, responseBody);
+
+    if (!ok) {
+        const char* errBody = "<h2>502 - Module unreachable</h2>";
+        client.printf("%X\r\n", (unsigned int)strlen(errBody));
+        client.print(errBody);
+        client.print("\r\n");
+    } else {
+        if (doRewrite && contentType == "text/html; charset=utf-8" && lastActiveModulePrefix.length() > 0) {
+            rewriteModuleHtml(responseBody, lastActiveModulePrefix);
+        }
+        size_t bodyLen = responseBody.length();
+        client.printf("%X\r\n", (unsigned int)bodyLen);
+        const size_t CHUNK = 1460;
+        size_t sent = 0;
+        const char* data = responseBody.c_str();
+        uint32_t deadline = millis() + 15000;
+        while (sent < bodyLen && millis() < deadline) {
+            size_t toSend = bodyLen - sent;
+            if (toSend > CHUNK) toSend = CHUNK;
+            size_t written = client.write(reinterpret_cast<const uint8_t*>(data + sent), toSend);
+            if (written > 0) { sent += written; }
+            else { Ethernet.loop(); delayMicroseconds(100); }
+        }
+        client.print("\r\n");
+    }
+    client.print("0\r\n\r\n");
+    client.flush();
 }
 
 // Page handlers
@@ -331,58 +735,58 @@ void SimpleWebManager::sendHomePage(EthernetClient& client) {
     html.replace("%CSS_STYLES%", FPSTR(COMMON_CSS));
     html.replace("%FIRMWARE_VERSION%", FIRMWARE_VERSION);
     
-    SimpleHTTPServer::send(client, 200, "text/html", html);
+    SimpleHTTPServer::send(client, 200, "text/html; charset=utf-8", html);
 }
 
 void SimpleWebManager::sendTouchHomePage(EthernetClient& client) {
     extern const char TOUCH_FRIENDLY_HOME_PAGE[];
     
     // Send directly from PROGMEM without string manipulation
-    SimpleHTTPServer::sendP(client, 200, "text/html", TOUCH_FRIENDLY_HOME_PAGE);
+    SimpleHTTPServer::sendP(client, 200, "text/html; charset=utf-8", TOUCH_FRIENDLY_HOME_PAGE);
 }
 
 void SimpleWebManager::sendEventLoggerPage(EthernetClient& client) {
     extern const char TOUCH_FRIENDLY_EVENT_LOGGER_PAGE[];
-    SimpleHTTPServer::sendP(client, 200, "text/html", TOUCH_FRIENDLY_EVENT_LOGGER_PAGE);
+    SimpleHTTPServer::sendP(client, 200, "text/html; charset=utf-8", TOUCH_FRIENDLY_EVENT_LOGGER_PAGE);
 }
 
 void SimpleWebManager::sendLogViewerPage(EthernetClient& client) {
     extern const char TOUCH_FRIENDLY_LOG_VIEWER_PAGE[];
-    SimpleHTTPServer::sendP(client, 200, "text/html", TOUCH_FRIENDLY_LOG_VIEWER_PAGE);
+    SimpleHTTPServer::sendP(client, 200, "text/html; charset=utf-8", TOUCH_FRIENDLY_LOG_VIEWER_PAGE);
 }
 
 void SimpleWebManager::sendNetworkPage(EthernetClient& client) {
     extern const char TOUCH_FRIENDLY_NETWORK_PAGE[];
     
     // Send directly from PROGMEM without string manipulation
-    SimpleHTTPServer::sendP(client, 200, "text/html", TOUCH_FRIENDLY_NETWORK_PAGE);
+    SimpleHTTPServer::sendP(client, 200, "text/html; charset=utf-8", TOUCH_FRIENDLY_NETWORK_PAGE);
 }
 
 void SimpleWebManager::sendOTAPage(EthernetClient& client) {
     extern const char TOUCH_FRIENDLY_OTA_PAGE[];
-    SimpleHTTPServer::sendP(client, 200, "text/html", TOUCH_FRIENDLY_OTA_PAGE);
+    SimpleHTTPServer::sendP(client, 200, "text/html; charset=utf-8", TOUCH_FRIENDLY_OTA_PAGE);
 }
 
 void SimpleWebManager::sendDeviceSettingsPage(EthernetClient& client) {
     extern const char TOUCH_FRIENDLY_DEVICE_SETTINGS_PAGE[];
     
     // Send directly from PROGMEM without any string manipulation
-    SimpleHTTPServer::sendP(client, 200, "text/html", TOUCH_FRIENDLY_DEVICE_SETTINGS_PAGE);
+    SimpleHTTPServer::sendP(client, 200, "text/html; charset=utf-8", TOUCH_FRIENDLY_DEVICE_SETTINGS_PAGE);
 }
 
 void SimpleWebManager::sendAnalogWorkSwitchPage(EthernetClient& client) {
     extern const char TOUCH_FRIENDLY_ANALOG_WORK_SWITCH_PAGE[];
-    SimpleHTTPServer::sendP(client, 200, "text/html", TOUCH_FRIENDLY_ANALOG_WORK_SWITCH_PAGE);
+    SimpleHTTPServer::sendP(client, 200, "text/html; charset=utf-8", TOUCH_FRIENDLY_ANALOG_WORK_SWITCH_PAGE);
 }
 
 void SimpleWebManager::sendCANConfigPage(EthernetClient& client) {
     extern const char DRAG_DROP_CAN_CONFIG_PAGE[];
-    SimpleHTTPServer::sendP(client, 200, "text/html", DRAG_DROP_CAN_CONFIG_PAGE);
+    SimpleHTTPServer::sendP(client, 200, "text/html; charset=utf-8", DRAG_DROP_CAN_CONFIG_PAGE);
 }
 
 void SimpleWebManager::sendCANConfigUploadPage(EthernetClient& client) {
     extern const char CAN_CONFIG_UPLOAD_PAGE[];
-    SimpleHTTPServer::sendP(client, 200, "text/html", CAN_CONFIG_UPLOAD_PAGE);
+    SimpleHTTPServer::sendP(client, 200, "text/html; charset=utf-8", CAN_CONFIG_UPLOAD_PAGE);
 }
 
 // WAS Demo page removed - using WebSocket telemetry instead
@@ -425,6 +829,67 @@ void SimpleWebManager::handleApiStatus(EthernetClient& client) {
     String json;
     serializeJson(doc, json);
     SimpleHTTPServer::sendJSON(client, json);
+}
+
+// -----------------------------------------------------------------------
+// handleApiModules
+// Fetches the module list from the ESP32 via UART proxy (/api/status)
+// and returns it as JSON to the browser.
+// Format: { "wifiOnline": true, "modules": [...] }
+// Each module: { "name", "path", "ip", "desc", "online", "src" }
+// -----------------------------------------------------------------------
+void SimpleWebManager::handleApiModules(EthernetClient& client) {
+    // Return early if the ESP32 is not detected.
+    // proxyRequest() would otherwise block for 15 s and hang the browser.
+    if (!esp32Interface.isDetected()) {
+        SimpleHTTPServer::sendJSON(client, "{\"wifiOnline\":false,\"modules\":[]}");
+        return;
+    }
+
+    String responseBody;
+    bool esp32ok = esp32Interface.proxyRequest("192.168.137.1/api/status", responseBody);
+
+    if (!esp32ok || responseBody.length() == 0) {
+        SimpleHTTPServer::sendJSON(client, "{\"wifiOnline\":false,\"modules\":[]}");
+        return;
+    }
+
+    // Extract bridge metadata from the ESP32 response
+    auto extractStr = [&](const String& key) -> String {
+        String pat = "\"" + key + "\":\"";
+        int pos = responseBody.indexOf(pat);
+        if (pos < 0) return "";
+        pos += pat.length();
+        int end = responseBody.indexOf('"', pos);
+        if (end < 0) return "";
+        return responseBody.substring(pos, end);
+    };
+    String bridgeUrl  = extractStr("bridgeUrl");
+    String bridgeName = extractStr("bridgeName");
+    String bridgeDesc = extractStr("bridgeDesc");
+    if (bridgeUrl.length() == 0) bridgeUrl = "wifi"; // Fallback
+    if (bridgeName.length() == 0) bridgeName = "Bridge";
+
+    String out = String("{") + "\"wifiOnline\":true,";
+    out += "\"bridgeUrl\":\"" + bridgeUrl + "\",";
+    out += "\"bridgeName\":\"" + bridgeName + "\",";
+    out += "\"bridgeDesc\":\"" + bridgeDesc + "\",";
+    out += "\"modules\":";
+    int modStart = responseBody.indexOf("\"modules\":");
+    if (modStart >= 0) {
+        int arrStart = responseBody.indexOf('[', modStart);
+        if (arrStart >= 0) {
+            int depth = 0, arrEnd = arrStart;
+            for (int i = arrStart; i < (int)responseBody.length(); i++) {
+                if (responseBody[i] == '[') depth++;
+                else if (responseBody[i] == ']') { depth--; if (depth == 0) { arrEnd = i; break; } }
+            }
+            out += responseBody.substring(arrStart, arrEnd + 1);
+        } else { out += "[]"; }
+    } else { out += "[]"; }
+    out += "}";
+
+    SimpleHTTPServer::sendJSON(client, out);
 }
 
 void SimpleWebManager::handleEventLoggerConfig(EthernetClient& client, const String& method) {
@@ -647,18 +1112,21 @@ void SimpleWebManager::handleDeviceSettings(EthernetClient& client, const String
         // Return current settings from ConfigManager
         ConfigManager* config = ConfigManager::getInstance();
         
-        StaticJsonDocument<256> doc;
+        StaticJsonDocument<384> doc;
         doc["deviceType"] = "Steer";  // Fixed for steer module
         doc["moduleId"] = 126;  // Steer module ID
         doc["udpPassthrough"] = config->getGPSPassThrough();
         doc["sensorFusion"] = false;  // Sensor fusion not implemented yet
         doc["pwmBrakeMode"] = config->getPWMBrakeMode();
+        doc["pwmFilterAlpha"] = config->getPwmFilterAlpha();
+        doc["pwmMinThresholdPct"] = config->getPwmMinThresholdPct();
         doc["softStartDuration"] = config->getSoftStartDurationMs();
         doc["encoderType"] = config->getEncoderType();
         doc["serialRadioBaud"] = config->getSerialRadioBaudRate();
         doc["jdPWMEnabled"] = config->getJDPWMEnabled();
         doc["jdPWMSensitivity"] = config->getJDPWMSensitivity();
         doc["buzzerVolume"] = config->getBuzzerVolume();
+        doc["sectionControlActive"] = !config->getSectionControlSleepMode();
 
         String json;
         serializeJson(doc, json);
@@ -669,7 +1137,7 @@ void SimpleWebManager::handleDeviceSettings(EthernetClient& client, const String
         String body = readPostBody(client);
         
         // Parse JSON
-        StaticJsonDocument<256> doc;
+        StaticJsonDocument<384> doc;
         DeserializationError error = deserializeJson(doc, body);
         
         if (error) {
@@ -681,29 +1149,43 @@ void SimpleWebManager::handleDeviceSettings(EthernetClient& client, const String
         bool udpPassthrough = doc["udpPassthrough"] | false;
         bool sensorFusion = doc["sensorFusion"] | false;
         bool pwmBrakeMode = doc["pwmBrakeMode"] | false;
+        uint8_t pwmFilterAlpha = (uint8_t)(doc["pwmFilterAlpha"] | 90);
+        uint8_t pwmMinThresholdPct = (uint8_t)(doc["pwmMinThresholdPct"] | 25);
         uint16_t softStartDuration = doc["softStartDuration"] | 500;
         int encoderType = doc["encoderType"] | 1;
         uint32_t serialRadioBaud = doc["serialRadioBaud"] | 115200;
         bool jdPWMEnabled = doc["jdPWMEnabled"] | false;
         int jdPWMSensitivity = doc["jdPWMSensitivity"] | 5;
         int buzzerVolume = doc["buzzerVolume"] | 1;
+        bool sectionControlActive;
+        if (doc.containsKey("sectionControlActive")) {
+            sectionControlActive = doc["sectionControlActive"] | true;
+        } else {
+            // Backward compatibility for older UI payloads.
+            bool sectionControlSleepMode = doc["sectionControlSleepMode"] | false;
+            sectionControlActive = !sectionControlSleepMode;
+        }
 
         // Save to ConfigManager
         ConfigManager* config = ConfigManager::getInstance();
         config->setGPSPassThrough(udpPassthrough);
         config->setPWMBrakeMode(pwmBrakeMode);
+        config->setPwmFilterAlpha(constrain(pwmFilterAlpha, 0, 97));
+        config->setPwmMinThresholdPct(constrain(pwmMinThresholdPct, 0, 100));
         config->setSoftStartDurationMs(softStartDuration);
         config->setEncoderType(encoderType);
         config->setSerialRadioBaudRate(serialRadioBaud);
         config->setJDPWMEnabled(jdPWMEnabled);
         config->setJDPWMSensitivity(jdPWMSensitivity);
         config->setBuzzerVolume(buzzerVolume);
+        config->setSectionControlSleepMode(!sectionControlActive);
 
         // Save to EEPROM
         config->saveTurnSensorConfig();  // This saves encoder type and JD PWM settings
         config->saveSteerConfig();       // This saves PWM brake mode
         config->saveGPSConfig();         // This saves GPS passthrough
-        config->saveMiscConfig();        // This saves buzzer volume
+        config->saveMiscConfig();        // This saves buzzer volume, LED, PWM filter settings
+        config->saveMachineConfig();     // This saves section control sleep mode
         
         // Apply JD PWM mode change to ADProcessor
         extern ADProcessor adProcessor;
@@ -965,6 +1447,84 @@ void SimpleWebManager::handleOTAUpload(EthernetClient& client) {
 
 // Helper methods
 
+// -----------------------------------------------------------------------
+// DNS Alias page and API
+// -----------------------------------------------------------------------
+
+void SimpleWebManager::sendDNSAliasPage(EthernetClient& client) {
+    extern const char TOUCH_FRIENDLY_DNS_ALIAS_PAGE[];
+    SimpleHTTPServer::sendP(client, 200, "text/html; charset=utf-8", TOUCH_FRIENDLY_DNS_ALIAS_PAGE);
+}
+
+void SimpleWebManager::handleDNSAliasConfig(EthernetClient& client, const String& method) {
+    ConfigManager* config = ConfigManager::getInstance();
+    if (!config) {
+        SimpleHTTPServer::sendJSON(client, "{\"status\":\"error\",\"message\":\"Config unavailable\"}");
+        return;
+    }
+
+    if (method == "GET") {
+        // Return current aliases as JSON array
+        String json = "{\"aliases\":[";
+        for (uint8_t i = 0; i < 4; i++) {
+            if (i > 0) json += ",";
+            json += "\"";
+            json += config->getDNSAlias(i);
+            json += "\"";
+        }
+        json += "]}";
+        SimpleHTTPServer::sendJSON(client, json);
+
+    } else if (method == "POST") {
+        String body = readPostBody(client);
+
+        StaticJsonDocument<256> doc;
+        DeserializationError error = deserializeJson(doc, body);
+        if (error) {
+            SimpleHTTPServer::sendJSON(client, "{\"status\":\"error\",\"message\":\"Invalid JSON\"}");
+            return;
+        }
+
+        JsonArray arr = doc["aliases"];
+        if (!arr) {
+            SimpleHTTPServer::sendJSON(client, "{\"status\":\"error\",\"message\":\"Missing aliases array\"}");
+            return;
+        }
+
+        // Save aliases; clear owned-hostname list and rebuild it
+        for (uint8_t i = 0; i < 4; i++) {
+            const char* val = (i < arr.size()) ? (const char*)arr[i] : "";
+            // Sanitize: only lowercase alphanumeric and hyphen, max 11 chars
+            char sanitized[12] = {};
+            int slen = 0;
+            for (int k = 0; val[k] && slen < 11; k++) {
+                char c = (char)tolower((unsigned char)val[k]);
+                if (isalnum((unsigned char)c) || c == '-') sanitized[slen++] = c;
+            }
+            sanitized[slen] = '\0';
+            config->setDNSAlias(i, sanitized);
+        }
+        config->saveDNSAliasConfig();
+
+        // Rebuild ownedHostnames in HTTP server from the newly saved aliases
+        for (uint8_t i = 0; i < 4; i++) {
+            const char* alias = config->getDNSAlias(i);
+            if (alias && alias[0] != '\0') {
+                httpServer.addOwnedHostname(String(alias));
+            }
+        }
+
+        LOG_INFO(EventSource::NETWORK, "DNS aliases updated: '%s','%s','%s','%s'",
+                 config->getDNSAlias(0), config->getDNSAlias(1),
+                 config->getDNSAlias(2), config->getDNSAlias(3));
+
+        SimpleHTTPServer::sendJSON(client, "{\"status\":\"ok\"}");
+
+    } else {
+        SimpleHTTPServer::send(client, 405, "text/plain", "Method Not Allowed");
+    }
+}
+
 String SimpleWebManager::readPostBody(EthernetClient& client) {
     String body;
     body.reserve(20480); // Pre-allocate for 20KB (handles JSON config files)
@@ -1116,7 +1676,7 @@ void SimpleWebManager::broadcastTelemetry() {
 
 void SimpleWebManager::sendUM98xConfigPage(EthernetClient& client) {
     extern const char TOUCH_FRIENDLY_GPS_CONFIG_PAGE[];
-    SimpleHTTPServer::sendP(client, 200, "text/html", TOUCH_FRIENDLY_GPS_CONFIG_PAGE);
+    SimpleHTTPServer::sendP(client, 200, "text/html; charset=utf-8", TOUCH_FRIENDLY_GPS_CONFIG_PAGE);
 }
 
 void SimpleWebManager::handleUM98xRead(EthernetClient& client) {
@@ -1288,6 +1848,7 @@ void SimpleWebManager::handleCANConfig(EthernetClient& client, const String& met
         doc["can3Function"] = config.can3Function;
         doc["can3Name"] = config.can3Name;
         doc["moduleID"] = config.moduleID;
+        doc["keyaAllowCANWAS"] = (config.reserved[0] & 0x01) != 0;
 
         String json;
         serializeJson(doc, json);
@@ -1345,6 +1906,14 @@ void SimpleWebManager::handleCANConfig(EthernetClient& client, const String& met
         }
         if (!doc["moduleID"].isNull()) {
             config.moduleID = doc["moduleID"];
+        }
+        if (!doc["keyaAllowCANWAS"].isNull()) {
+            bool allow = doc["keyaAllowCANWAS"];
+            if (allow) {
+                config.reserved[0] |= 0x01;
+            } else {
+                config.reserved[0] &= (uint8_t)~0x01;
+            }
         }
 
         // Validate: ensure no duplicate bus names (except None/0)

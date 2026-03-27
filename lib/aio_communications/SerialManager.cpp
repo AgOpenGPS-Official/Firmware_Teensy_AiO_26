@@ -11,6 +11,10 @@
 // Static instance pointer
 SerialManager *SerialManager::instance = nullptr;
 
+// ESP32 UART RX buffer in RAM2 (DMAMEM) - must be large enough for proxy responses (40KB+)
+// RAM2 has ~469KB free, RAM1 is tight
+DMAMEM static uint8_t esp32RxBuffer[49152];  // 48KB in RAM2
+
 SerialManager::SerialManager()
     : isInitialized(false), serialIMU(&SerialIMU), prevUSB1DTR(false), prevUSB2DTR(false)
 {

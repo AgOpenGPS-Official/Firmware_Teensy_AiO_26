@@ -62,6 +62,7 @@ private:
     float commandedRPM = 0.0f;
     uint16_t motorPosition = 0;
     uint16_t motorCurrent = 0;
+    float motorCurrentX32 = 0.0f;
     uint16_t motorErrorCode = 0;
     bool heartbeatValid = false;
     uint32_t lastHeartbeat = 0;
@@ -72,6 +73,9 @@ private:
         SEND_SPEED
     };
     CommandState nextCommand = SEND_ENABLE;
+
+    static constexpr uint8_t SLIP_COUNT_THRESHOLD = 8;
+    static constexpr float SLIP_RPM_TOLERANCE = 10.0f;
 
     // Massey K_Bus tracking
     uint8_t mfRollingCounter[8] = {0};  // Track last K_Bus message for F1/F2
@@ -150,7 +154,7 @@ public:
     // Motor type identification
     MotorDriverType getType() const override { return MotorDriverType::TRACTOR_CAN; }
     const char* getTypeName() const override;
-    bool hasCurrentSensing() const override { return false; }
+    bool hasCurrentSensing() const override { return hasKeyaFunction(); }
     bool hasPositionFeedback() const override {
         return hasKeyaFunction();
     }
@@ -158,15 +162,18 @@ public:
     // Detection and safety
     bool isDetected() override { return steerReady; }
     void handleKickout(KickoutType type, float value) override;
-    float getCurrentDraw() override { return 0.0f; }
+    float getCurrentDraw() override { return hasKeyaFunction() ? motorCurrentX32 : 0.0f; }
 
     // Keya-specific methods (for compatibility)
     float getActualRPM() const { return actualRPM; }
     float getCommandedRPM() const { return commandedRPM; }
     uint16_t getMotorPosition() const { return motorPosition; }
+    float getKeyaCurrentX32() const { return motorCurrentX32; }
+    bool checkKeyaMotorSlip();
     bool hasRPMFeedback() const {
         return hasKeyaFunction() && heartbeatValid;
     }
+    bool hasKeyaMotor() const { return hasKeyaFunction(); }
 
     // Massey-specific methods
     bool isEngageButtonPressed() const { return engageButtonPressed; }

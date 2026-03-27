@@ -21,6 +21,35 @@ const char TOUCH_FRIENDLY_HOME_PAGE[] PROGMEM = R"rawliteral(
     <meta name="apple-mobile-web-app-capable" content="yes">
     <title>AiO v26</title>
     <link rel="stylesheet" href="/touch.css">
+    <style>
+        .card > #module-list > .module-row {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 16px 0;
+        }
+        .card > #module-list > .module-row:last-of-type {
+            padding-bottom: 0;
+        }
+        .card > #module-list > .module-row:first-of-type {
+            padding-top: 0;
+        }
+        .card > #module-list > p {
+            color: #7f8c8d;
+            font-size: 14px;
+            margin: 0;
+            padding: 4px 0;
+        }
+        .card > #module-list > p.error {
+            color: #e74c3c; /* Red for errors */
+        }
+        .module-desc {
+            flex: 1;
+            font-size: 16px;
+            color: #333;
+            line-height: 1.4;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
@@ -70,7 +99,20 @@ const char TOUCH_FRIENDLY_HOME_PAGE[] PROGMEM = R"rawliteral(
                 </svg>
                 GPS Config
             </a></li>
+            <li><a href="/dns-alias">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="white" style="margin-right: 10px;">
+                    <path d="M20 18v-1.5c0-.8-.7-1.5-1.5-1.5h-1v-1c0-.6-.4-1-1-1H7.5c-.6 0-1 .4-1 1v1h-1C4.7 15 4 15.7 4 16.5V18H2v2h20v-2h-2Zm-2 0H6v-1.5h12V18ZM15 7h1.2L12 2 7.8 7H9v4h6V7Z"/>
+                </svg>
+                DNS Aliases
+            </a></li>
         </nav>
+        
+        <h2>WiFi Module</h2>
+        <div class="card">
+            <div id="module-list">
+                <p id="module-loading">Loading modules...</p>
+            </div>
+        </div>
         
         <h2>System</h2>
         <div class="grid">
@@ -94,7 +136,86 @@ const char TOUCH_FRIENDLY_HOME_PAGE[] PROGMEM = R"rawliteral(
         let packetCount = 0;
         let rateUpdateTime = 0;
         
-        // Touch-friendly confirmation dialog
+        // Load WiFi modules dynamically
+        function loadModules() {
+            fetch('/api/modules')
+                .then(r => r.json())
+                .then(data => {
+                    const list = document.getElementById('module-list');
+                    list.innerHTML = '';
+
+                    // Bridge button when ESP32 is online
+                    if (data.wifiOnline) {
+                        const bUrl  = data.bridgeUrl  || 'aio';
+                        const bName = data.bridgeName || 'Bridge';
+                        const bDesc = data.bridgeDesc || 'WiFi-to-UART Bridge';
+                        list.appendChild(makeModuleRow(
+                            bName,
+                            '/wifi/',
+                            bDesc,
+                            true,
+                            '192.168.137.1',
+                            false,
+                            bUrl
+                        ));
+                    }
+
+                    // Modules from DynModules
+                    const mods = data.modules || [];
+                    mods.forEach(m => {
+                        const path = '/' + (m.path||'').replace(/^\/+|\/+$/g,'') + '/';
+                        const legacy = (m.src === 'pgn203');
+                        const dispName = legacy ? (m.name + ' (alt)') : (m.name || m.path);
+                        const dispDesc = legacy
+                            ? 'Legacy module - does not respond with PGN 205. Web interface via IP proxy.':
+                              (m.desc || '');
+                        list.appendChild(makeModuleRow(
+                            dispName,
+                            path,
+                            dispDesc,
+                            m.online,
+                            m.ip || '',
+                            legacy,
+                            (m.path||'').replace(/^\/+|\/+$/g,'')
+                        ));
+                    });
+
+                    if (list.children.length === 0) {
+                        list.innerHTML = '<p>No modules connected.</p>';
+                    }
+                })
+                .catch(() => {
+                    document.getElementById('module-list').innerHTML =
+                        '<p class="error">Failed to load modules.</p>';
+                });
+        }
+
+        function makeModuleRow(name, path, desc, online, ip, legacy, shortname) {
+            const row = document.createElement('div');
+            row.className = 'module-row';
+
+            const btn = document.createElement('button');
+            btn.className = 'touch-button';
+            btn.style.cssText = 'min-width:200px; max-width:200px; flex-shrink:0; margin:0; padding:12px 10px; font-size:17px; text-align:left; white-space:normal; word-break:break-word; display:block; height:auto;';
+            btn.style.background = legacy ? '#b8860b' : (online ? '' : '#888');
+
+            const sn = shortname || path.replace(/^\/+|\/+$/g, '');
+            btn.innerHTML = name
+                     + '<br><span style="font-size:14px;opacity:0.7;font-weight:400;">' + sn + '.local</span>'
+                + (ip ? '<br><span style="font-size:12px;opacity:0.55;font-weight:400;">' + ip + '</span>' : '');
+
+            btn.onclick = () => window.open(path, '_blank');
+            if (!online) btn.style.opacity = '0.55';
+
+            const txt = document.createElement('div');
+            txt.className = 'module-desc';
+            txt.textContent = desc;
+
+            row.appendChild(btn);
+            row.appendChild(txt);
+            return row;
+        }
+        
         function confirmRestart() {
             if (confirm('Are you sure you want to restart the system?')) {
                 restartSystem();
@@ -154,8 +275,10 @@ const char TOUCH_FRIENDLY_HOME_PAGE[] PROGMEM = R"rawliteral(
             // WebSocket data received - could be used for future updates
         }
         
-        // Connect on page load - same as old page
+        // Connect on page load
         connectWebSocket();
+        loadModules();
+        setInterval(loadModules, 15000); // refresh every 15 s
         
         // Fetch firmware version
         fetch('/api/status')

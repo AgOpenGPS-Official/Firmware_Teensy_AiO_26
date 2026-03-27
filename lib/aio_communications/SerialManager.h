@@ -32,7 +32,6 @@ private:
     uint8_t gps2TxBuffer[256];
     uint8_t radioRxBuffer[64];
     uint8_t rs232TxBuffer[256];
-    uint8_t esp32RxBuffer[256];
     uint8_t esp32TxBuffer[256];
 
     // SerialIMU - owned by SerialManager

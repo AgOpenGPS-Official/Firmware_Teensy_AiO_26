@@ -52,8 +52,7 @@ void sys_check_core_locking(const char *file, int line, const char *func);
 // #define MEMP_NUM_PBUF                      16
 // #define MEMP_NUM_RAW_PCB                   4
 #ifndef MEMP_NUM_UDP_PCB
-// Reduced from 8 since mDNS is disabled
-#define MEMP_NUM_UDP_PCB                   6  /* 4, was 8 for mDNS */
+#define MEMP_NUM_UDP_PCB                   10  /* extra socket for custom .local mDNS responder */
 #endif  // !MEMP_NUM_UDP_PCB
 #ifndef MEMP_NUM_TCP_PCB
 #define MEMP_NUM_TCP_PCB                   8  /* 5 */
@@ -67,16 +66,14 @@ void sys_check_core_locking(const char *file, int line, const char *func);
 // #define MEMP_NUM_FRAG_PBUF                 15
 // #define MEMP_NUM_ARP_QUEUE                 30
 #ifndef MEMP_NUM_IGMP_GROUP
-// Reduced to 0 since IGMP is disabled
-#define MEMP_NUM_IGMP_GROUP                0  /* 8, was 9 */
+#define MEMP_NUM_IGMP_GROUP                9  /* 8, +1 for mDNS */
 #endif  // !MEMP_NUM_IGMP_GROUP
 /* #define LWIP_NUM_SYS_TIMEOUT_INTERNAL                                \
    (LWIP_TCP + IP_REASSEMBLY + LWIP_ARP + (2*LWIP_DHCP) + LWIP_ACD + \
     LWIP_IGMP + LWIP_DNS + PPP_NUM_TIMEOUTS +                        \
     (LWIP_IPV6*(1 + LWIP_IPV6_REASS + LWIP_IPV6_MLD + LWIP_IPV6_DHCP6)))*/
 #if !defined(LWIP_MDNS_RESPONDER) || LWIP_MDNS_RESPONDER
-// No longer incrementing by 6 since mDNS is disabled:
-// #define MEMP_NUM_SYS_TIMEOUT               ((LWIP_NUM_SYS_TIMEOUT_INTERNAL) + (6))
+#define MEMP_NUM_SYS_TIMEOUT               ((LWIP_NUM_SYS_TIMEOUT_INTERNAL) + (6))
 #else
 #define MEMP_NUM_SYS_TIMEOUT               LWIP_NUM_SYS_TIMEOUT_INTERNAL  /* No +6 for mDNS */
 #endif  // !defined(LWIP_MDNS_RESPONDER) || LWIP_MDNS_RESPONDER
@@ -172,7 +169,7 @@ void sys_check_core_locking(const char *file, int line, const char *func);
 // IGMP options
 // Disabled: Multicast not used by AiO v26
 #ifndef LWIP_IGMP
-#define LWIP_IGMP 0  /* 1 */
+#define LWIP_IGMP 1  /* 1 */
 #endif  // !LWIP_IGMP
 
 // DNS options
@@ -275,8 +272,7 @@ void sys_check_core_locking(const char *file, int line, const char *func);
 // #define LWIP_NETIF_HWADDRHINT          0
 // #define LWIP_NETIF_TX_SINGLE_PBUF      0
 #if !defined(LWIP_MDNS_RESPONDER) || LWIP_MDNS_RESPONDER
-// No longer incrementing by 1 since mDNS is disabled:
-// #define LWIP_NUM_NETIF_CLIENT_DATA     1
+#define LWIP_NUM_NETIF_CLIENT_DATA     1  /* +1 for mDNS */
 #else
 #define LWIP_NUM_NETIF_CLIENT_DATA     0  /* No +1 for mDNS */
 #endif  // !defined(LWIP_MDNS_RESPONDER) || LWIP_MDNS_RESPONDER
@@ -534,9 +530,8 @@ void sys_check_core_locking(const char *file, int line, const char *func);
   } while (0)  /* do { (sec) = 0; (us) = 0; } while(0) */
 
 // MDNS options (mdns_opts.h)
-// Disabled: mDNS/Bonjour not used by AiO v26
 #ifndef LWIP_MDNS_RESPONDER
-#define LWIP_MDNS_RESPONDER 0  /* LWIP_UDP && LWIP_IGMP */
+#define LWIP_MDNS_RESPONDER 1  /* LWIP_UDP && LWIP_IGMP */
 // If you change LWIP_MDNS_RESPONDER to zero here then:
 // 1. Reduce MEMP_NUM_SYS_TIMEOUT by 6
 // 2. Change LWIP_AUTOIP and LWIP_DHCP_AUTOIP_COOP to 0

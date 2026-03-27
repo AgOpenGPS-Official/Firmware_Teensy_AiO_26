@@ -220,12 +220,15 @@ const char TOUCH_FRIENDLY_DEVICE_SETTINGS_PAGE[] PROGMEM = R"rawliteral(
                 udpPassthrough: document.getElementById('udpPassthrough').checked,
                 sensorFusion: document.getElementById('sensorFusion').checked,
                 pwmBrakeMode: document.getElementById('pwmBrakeMode').checked,
+                pwmFilterAlpha: parseInt(document.getElementById('pwmFilterAlpha').value),
+                pwmMinThresholdPct: parseInt(document.getElementById('pwmMinThresholdPct').value),
                 softStartDuration: parseInt(document.getElementById('softStartDuration').value),
                 encoderType: parseInt(document.getElementById('encoderType').value),
                 serialRadioBaud: parseInt(document.getElementById('serialRadioBaud').value),
                 jdPWMEnabled: document.getElementById('jdPWMEnabled').checked,
                 jdPWMSensitivity: parseInt(document.getElementById('jdPWMSensitivity').value),
-                buzzerVolume: parseInt(document.getElementById('buzzerVolume').value)
+                buzzerVolume: parseInt(document.getElementById('buzzerVolume').value),
+                sectionControlActive: document.getElementById('sectionControlActive').checked
             };
             
             // Show saving status
@@ -271,7 +274,11 @@ const char TOUCH_FRIENDLY_DEVICE_SETTINGS_PAGE[] PROGMEM = R"rawliteral(
                     document.getElementById('udpPassthrough').checked = data.udpPassthrough || false;
                     document.getElementById('sensorFusion').checked = data.sensorFusion || false;
                     document.getElementById('pwmBrakeMode').checked = data.pwmBrakeMode || false;
-                    document.getElementById('softStartDuration').value = data.softStartDuration || 500;
+                    document.getElementById('pwmFilterAlpha').value = (data.pwmFilterAlpha !== undefined) ? data.pwmFilterAlpha : 90;
+                    document.getElementById('pwmFilterAlphaValue').textContent = (data.pwmFilterAlpha !== undefined) ? data.pwmFilterAlpha : 90;
+                    document.getElementById('pwmMinThresholdPct').value = (data.pwmMinThresholdPct !== undefined) ? data.pwmMinThresholdPct : 25;
+                    document.getElementById('pwmMinThresholdPctValue').textContent = (data.pwmMinThresholdPct !== undefined) ? data.pwmMinThresholdPct : 25;
+                    document.getElementById('softStartDuration').value = data.softStartDuration ?? 500;
                     document.getElementById('encoderType').value = data.encoderType || 1;
                     document.getElementById('serialRadioBaud').value = data.serialRadioBaud || 115200;
                     document.getElementById('jdPWMEnabled').checked = data.jdPWMEnabled || false;
@@ -279,6 +286,7 @@ const char TOUCH_FRIENDLY_DEVICE_SETTINGS_PAGE[] PROGMEM = R"rawliteral(
                     updateSensitivityValue(data.jdPWMSensitivity || 5);
                     toggleJDPWMSensitivity();
                     document.getElementById('buzzerVolume').value = (data.buzzerVolume !== undefined) ? data.buzzerVolume : 1;
+                    document.getElementById('sectionControlActive').checked = (data.sectionControlActive !== undefined) ? data.sectionControlActive : true;
                 })
                 .catch((error) => {
                     console.error('Error loading settings:', error);
@@ -320,7 +328,9 @@ const char TOUCH_FRIENDLY_DEVICE_SETTINGS_PAGE[] PROGMEM = R"rawliteral(
                         <span class="toggle-slider"></span>
                     </label>
                 </div>
-                
+
+                <hr style="border: none; border-top: 2px solid #bbb; margin: 16px 0;">
+
                 <div class="toggle-container">
                     <div class="toggle-info">
                         <label for="sensorFusion" class="toggle-label">Enable Virtual WAS (VWAS)</label>
@@ -333,7 +343,9 @@ const char TOUCH_FRIENDLY_DEVICE_SETTINGS_PAGE[] PROGMEM = R"rawliteral(
                         <span class="toggle-slider"></span>
                     </label>
                 </div>
-                
+
+                <hr style="border: none; border-top: 2px solid #bbb; margin: 16px 0;">
+
                 <div class="toggle-container">
                     <div class="toggle-info">
                         <label for="pwmBrakeMode" class="toggle-label">PWM Motor Brake Mode</label>
@@ -345,6 +357,24 @@ const char TOUCH_FRIENDLY_DEVICE_SETTINGS_PAGE[] PROGMEM = R"rawliteral(
                         <input type="checkbox" id="pwmBrakeMode" name="pwmBrakeMode">
                         <span class="toggle-slider"></span>
                     </label>
+                </div>
+
+                <div class="form-group" style="margin-top: 15px;">
+                    <label for="pwmFilterAlpha">PWM Low-Pass Filter: <span id="pwmFilterAlphaValue">90</span>%</label>
+                    <input type="range" id="pwmFilterAlpha" name="pwmFilterAlpha" min="0" max="97" value="90"
+                           style="width: 100%;" oninput="document.getElementById('pwmFilterAlphaValue').textContent = this.value">
+                    <div class="help-text" style="margin-top: 5px;">
+                        Smoothing factor for PWM output. Higher = smoother but slower response (90% means 90% old + 10% new value per update). Range 0-97%.
+                    </div>
+                </div>
+
+                <div class="form-group" style="margin-top: 15px;">
+                    <label for="pwmMinThresholdPct">PWM Min Threshold: <span id="pwmMinThresholdPctValue">25</span>% of MinPWM</label>
+                    <input type="range" id="pwmMinThresholdPct" name="pwmMinThresholdPct" min="0" max="100" value="25"
+                           style="width: 100%;" oninput="document.getElementById('pwmMinThresholdPctValue').textContent = this.value">
+                    <div class="help-text" style="margin-top: 5px;">
+                        Minimum filtered PWM magnitude required for output. If below this threshold (% of MinPWM), the motor is stopped. Prevents motor jitter from tiny PWM values.
+                    </div>
                 </div>
 
                 <div class="form-group" style="margin-top: 15px;">
@@ -367,6 +397,8 @@ const char TOUCH_FRIENDLY_DEVICE_SETTINGS_PAGE[] PROGMEM = R"rawliteral(
                     </div>
                 </div>
 
+                <hr style="border: none; border-top: 2px solid #bbb; margin: 16px 0;">
+
                 <div class="form-group">
                     <label for="encoderType">Encoder Type:</label>
                     <select id="encoderType" name="encoderType">
@@ -377,6 +409,8 @@ const char TOUCH_FRIENDLY_DEVICE_SETTINGS_PAGE[] PROGMEM = R"rawliteral(
                         Single channel encoders use only the Kickout-D pin. Quadrature encoders use both Kickout-A and Kickout-D pins for direction sensing and higher resolution.
                     </div>
                 </div>
+
+                <hr style="border: none; border-top: 2px solid #bbb; margin: 16px 0;">
 
                 <div class="form-group" style="margin-top: 15px;">
                     <label for="serialRadioBaud">RTK Radio Baud Rate:</label>
@@ -397,6 +431,8 @@ const char TOUCH_FRIENDLY_DEVICE_SETTINGS_PAGE[] PROGMEM = R"rawliteral(
                     </div>
                 </div>
 
+                <hr style="border: none; border-top: 2px solid #bbb; margin: 16px 0;">
+
                 <div class="form-group" style="margin-top: 15px;">
                     <label for="buzzerVolume">Buzzer Volume:</label>
                     <select id="buzzerVolume" name="buzzerVolume">
@@ -408,6 +444,23 @@ const char TOUCH_FRIENDLY_DEVICE_SETTINGS_PAGE[] PROGMEM = R"rawliteral(
                         Loud plays a multi-tone startup chime. Quiet plays a brief click. Off disables the buzzer entirely.
                     </div>
                 </div>
+
+                <hr style="border: none; border-top: 2px solid #bbb; margin: 16px 0;">
+
+                <div class="toggle-container" style="margin-top: 15px;">
+                    <div class="toggle-info">
+                        <label for="sectionControlActive" class="toggle-label">OnBoard Section Control Active</label>
+                        <div class="help-text">
+                            If enabled, onboard section control responds normally and drives section outputs.
+                        </div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="sectionControlActive" name="sectionControlActive">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+
+                <hr style="border: none; border-top: 2px solid #bbb; margin: 16px 0;">
 
                 <div class="toggle-container" style="margin-top: 15px;">
                     <div class="toggle-info">

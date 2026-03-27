@@ -27,15 +27,28 @@ private:
 
     // Serial configuration handled by SerialManager (BAUD_ESP32 = 460800)
 
-    // Receive buffer for serial data
+    // Receive buffer for serial data (normal PGN traffic)
     static constexpr size_t RX_BUFFER_SIZE = 512;
     uint8_t rxBuffer[RX_BUFFER_SIZE];
     size_t rxBufferIndex = 0;
+
+    // Separate larger buffer for proxy responses (ESP32 web pages can be several KB)
+    static constexpr size_t PROXY_BUFFER_SIZE = 51200;  // 50 KB usable (Teensy 4.1 has 1MB RAM)
+    static uint8_t proxyBuffer[PROXY_BUFFER_SIZE + 1];  // +1 guard byte for safe null-termination
+    size_t proxyBufferIndex = 0;
     
     // Helper methods
     void processIncomingData();
     void checkForHello();
-    
+    void checkForProxyResponse();
+
+    // Proxy state (blocking request/response via UART)
+    bool proxyPending = false;
+    uint32_t proxyRequestTime = 0;
+    static constexpr uint32_t PROXY_TIMEOUT_MS = 15000;
+    String proxyResponseBody;
+    bool proxyResponseReady = false;
+
 public:
     ESP32Interface() = default;
     ~ESP32Interface() = default;
@@ -46,6 +59,10 @@ public:
     
     // Send data to ESP32
     void sendToESP32(const uint8_t* data, size_t length);
+
+    // Proxy: send HTTP request to WiFi module via ESP32 UART
+    // Returns true and fills responseBody on success; blocks up to PROXY_TIMEOUT_MS
+    bool proxyRequest(const String& url, String& responseBody);
     
     // Status
     bool isDetected() const { return esp32Detected; }

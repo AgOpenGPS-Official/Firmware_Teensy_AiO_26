@@ -46,18 +46,69 @@ void SimpleHTTPServer::handleClient() {
         String method, path, query;
         
         if (parseRequest(client, method, path, query)) {
-            // Debug logging - comment out for production
-            // Serial.printf("HTTP: %s %s\n", method.c_str(), path.c_str());
-            
-            // Find matching route
-            Route* route = findRoute(path);
-            
-            if (route) {
-                // Call handler with client, method, and query
-                route->handler(client, method, query);
-            } else {
-                Serial.printf("404: %s\n", path.c_str());
-                handleNotFound(client);
+            // Host-based virtual routing: requests to <shortname>.aog
+            // are routed as /<shortname>/<path> to the module proxy.
+            // This allows "http://sc.aog" to reach the Section Control
+            // directly from the PC connected to the Teensy via LAN.
+            // Exception: aio.aog, gps.aog, steer.aog serve the Teensy's
+            // own pages (fall through to normal route matching).
+            bool handledByHost = false;
+            if (hostHeader.length() > 0) {
+                // Check if host ends with ".local" or ".aog" (module shortname)
+                int dotPos = hostHeader.indexOf(".local");
+                if (dotPos < 0) dotPos = hostHeader.indexOf(".aog");
+                if (dotPos > 0) {
+                    String shortname = hostHeader.substring(0, dotPos);
+                    // Determine if this hostname serves the Teensy's own pages.
+                    // 'aio' is permanently fixed → Teensy home page.
+                    // All other owned names (gps, steer, user aliases) come from
+                    // ownedHostnames which is populated by SimpleWebManager at startup.
+                    // 'wifi' is NOT treated as owned here: wifi.aog gets rewritten to
+                    // /wifi/<path> so the /wifi/ route serves the ESP32 bridge page.
+                    bool isOwned = (shortname == "aio");
+                    if (!isOwned) {
+                        for (const auto& h : ownedHostnames) {
+                            if (h.equalsIgnoreCase(shortname)) { isOwned = true; break; }
+                        }
+                    }
+                    if (!isOwned) {
+                        // Host-based rewrite for module routing.
+                        // Examples:
+                        //   host=sc.local,   path=/           -> /sc/
+                        //   host=sc.local,   path=/settings   -> /sc/settings
+                        //   host=sc.local,   path=/sc/settings -> /sc/settings (already prefixed)
+                        //   host=wifi.local, path=/wifi/settings -> /wifi/settings (already prefixed)
+                        String modulePrefix = "/" + shortname;
+                        String rewrittenPath;
+                        if (path == modulePrefix || path.startsWith(modulePrefix + "/")) {
+                            rewrittenPath = path;
+                        } else if (path == "/") {
+                            rewrittenPath = modulePrefix + "/";
+                        } else {
+                            rewrittenPath = modulePrefix + path;
+                        }
+                        // Try a registered route first (e.g. /wifi/ has its own handler)
+                        Route* r = findRoute(rewrittenPath);
+                        if (r) {
+                            r->handler(client, method, query);
+                        } else if (notFoundHandler) {
+                            notFoundHandler(client, rewrittenPath, query);
+                        }
+                        handledByHost = true;
+                    }
+                }
+            }
+
+            if (!handledByHost) {
+                Route* route = findRoute(path);
+                if (route) {
+                    route->handler(client, method, query);
+                } else if (notFoundHandler) {
+                    notFoundHandler(client, path, query);
+                } else {
+                    Serial.printf("404: %s\n", path.c_str());
+                    handleNotFound(client);
+                }
             }
         } else {
             Serial.println("HTTP: Parse failed");
@@ -98,10 +149,23 @@ bool SimpleHTTPServer::parseRequest(EthernetClient& client, String& method, Stri
         query = "";
     }
     
-    // Skip remaining headers
+    // Read headers - capture Host for virtual hosting
+    hostHeader = "";
     while (client.available()) {
         len = client.readBytesUntil('\n', line, sizeof(line) - 1);
         if (len <= 1) break;  // Empty line marks end of headers
+        line[len] = '\0';
+        // Parse Host header
+        if (strncasecmp(line, "Host:", 5) == 0) {
+            char* h = line + 5;
+            while (*h == ' ') h++;  // trim leading space
+            // Remove trailing \r\n and port
+            char* colon = strchr(h, ':');
+            if (colon) *colon = '\0';
+            char* cr = strchr(h, '\r');
+            if (cr) *cr = '\0';
+            hostHeader = String(h);
+        }
     }
     
     return true;
@@ -112,6 +176,14 @@ void SimpleHTTPServer::on(const String& path, HTTPHandler handler) {
     route.path = path;
     route.handler = handler;
     routes.push_back(route);
+}
+
+void SimpleHTTPServer::addOwnedHostname(const String& name) {
+    // Avoid duplicates
+    for (const auto& h : ownedHostnames) {
+        if (h.equalsIgnoreCase(name)) return;
+    }
+    ownedHostnames.push_back(name);
 }
 
 SimpleHTTPServer::Route* SimpleHTTPServer::findRoute(const String& path) {
@@ -145,14 +217,37 @@ void SimpleHTTPServer::send(EthernetClient& client, int code, const String& cont
     // Debug - comment out for production
     // Serial.printf("HTTP Send: %d %s, estimated len=%d\n", code, status.c_str(), content.length());
     
-    // Send response without Content-Length to avoid mismatch
+    // Send with Content-Length so the browser knows exactly how much data to expect.
+    // Without Content-Length the browser has to wait for TCP connection close to detect
+    // the end of the response, which causes visible "fragmenting" for large pages.
     client.printf("HTTP/1.1 %d %s\r\n", code, status.c_str());
     client.printf("Content-Type: %s\r\n", contentType.c_str());
+    client.printf("Content-Length: %u\r\n", (unsigned int)content.length());
     client.print("Connection: close\r\n");
     client.print("\r\n");
-    
-    // Send content
-    client.print(content);
+
+    // Send content in chunks to handle TCP backpressure.
+    // QNEthernet's write() returns 0 when the TX buffer is momentarily full,
+    // NOT necessarily because the client disconnected. We must retry with a
+    // short yield instead of aborting immediately.
+    const size_t SEND_CHUNK = 1460;  // ~1 Ethernet MTU payload
+    size_t sent = 0;
+    const char* data = content.c_str();
+    size_t total = content.length();
+    uint32_t sendDeadline = millis() + 15000;  // max 15s total send time for large pages
+    while (sent < total && millis() < sendDeadline) {
+        size_t toSend = total - sent;
+        if (toSend > SEND_CHUNK) toSend = SEND_CHUNK;
+        size_t written = client.write(reinterpret_cast<const uint8_t*>(data + sent), toSend);
+        if (written > 0) {
+            sent += written;
+        } else {
+            // TX buffer full - yield briefly and retry
+            // Do NOT break: a 0-return from QNEthernet write() is backpressure, not disconnect
+            Ethernet.loop();  // process lwIP stack to drain TX buffer
+            delayMicroseconds(100);
+        }
+    }
     client.flush();
 }
 
