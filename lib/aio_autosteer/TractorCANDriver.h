@@ -205,6 +205,17 @@ public:
         return 100.0f;
     }
 
+    // True only if this brand/config actually reports wheel angle over CAN.
+    // Generic/Keya and other legacy brands have no steering-angle frame and
+    // leave currentCurve at 0, so the physical WAS must supply the angle.
+    // Only Valtra/Massey populates currentCurve on the legacy path
+    // (see processValtraMessage); JSON protocol-engine configs report it via
+    // valveDataReceived when a curve message is defined and arriving.
+    bool providesCANWheelAngle() const {
+        if (useProtocolEngine) return protocolEngine.isValveDataReceived();
+        return getCurrentBrand() == TractorBrand::VALTRA_MASSEY;
+    }
+
     // Valve ready status methods (for engagement safety check)
     bool isValveReady() const {
         if (useProtocolEngine) return protocolEngine.isValveReady();

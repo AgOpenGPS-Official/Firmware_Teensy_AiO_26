@@ -648,10 +648,12 @@ void AutosteerProcessor::process() {
     }
 
     // Always update current angle reading (needed for PGN253 even when autosteer is off)
-    // CAN WAS priority: use CAN curve when TractorCAN is active and receiving data
+    // CAN WAS priority: use CAN curve only when this brand actually reports a
+    // steering angle over CAN. Generic/Keya brands have no curve frame, so they
+    // must fall through to the physical WAS (otherwise currentAngle is stuck at 0).
     if (motorPTR && motorPTR->getType() == MotorDriverType::TRACTOR_CAN) {
         TractorCANDriver* tractorCAN = static_cast<TractorCANDriver*>(motorPTR);
-        if (tractorCAN && tractorCAN->isValveDataReceived()) {
+        if (tractorCAN && tractorCAN->providesCANWheelAngle() && tractorCAN->isValveDataReceived()) {
             // CAN WAS available — use it as primary source
             int16_t canCurve = tractorCAN->getActualCurve();
             float scale = tractorCAN->getCurveScale();
