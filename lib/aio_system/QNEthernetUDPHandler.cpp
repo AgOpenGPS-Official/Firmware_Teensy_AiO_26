@@ -33,10 +33,9 @@ extern ConfigManager configManager;
 void QNEthernetUDPHandler::init() {
     LOG_INFO(EventSource::NETWORK, "Initializing QNEthernet UDP handlers");
     
-    // Check Ethernet link status first
+    // Do NOT return when link is down - bind sockets anyway.
     if (!Ethernet.linkState()) {
-        LOG_ERROR(EventSource::NETWORK, "No Ethernet link detected!");
-        return;
+        LOG_WARNING(EventSource::NETWORK, "No link yet - binding UDP sockets anyway");
     }
     
     // Log network configuration
