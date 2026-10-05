@@ -330,6 +330,40 @@ void MachineProcessor::process() {
     }
 }
 
+// PGN 237 - applied machine state, sent to AOG at 50 Hz
+// Reports what the outputs are actually driven with, which differs from the
+// PGN 239 command after a watchdog timeout or hydraulic auto-shutoff
+// Payload: sections 1-8, sections 9-16, hydLift, tramline, geoStop, status, 0, 0
+void MachineProcessor::sendPGN237() {
+    // Stay silent like the hello reply does when onboard section control sleeps
+    if (!isOnboardSectionControlActive() || !QNetworkBase::isConnected()) {
+        return;
+    }
+
+    uint8_t status = 0;
+    if (machineState.lastPGN239Time > 0) {
+        status |= MACHINE_REPLY_FLAG_DATA_VALID;
+    }
+
+    uint8_t reply[] = {
+        0x80, 0x81,                              // Header
+        MACHINE_HELLO_REPLY,                     // Source: Machine module (123)
+        MACHINE_PGN_REPLY,                       // PGN 237
+        8,                                       // Length
+        (uint8_t)(machineState.sectionStates & 0xFF),
+        (uint8_t)(machineState.sectionStates >> 8),
+        machineState.hydLift,                    // 0=off, 1=down, 2=up
+        machineState.tramline,                   // bit0=right, bit1=left
+        machineState.geoStop,                    // 0=inside boundary, 1=outside
+        status,
+        0, 0,                                    // Reserved
+        0                                        // CRC placeholder
+    };
+
+    calculateAndSetCRC(reply, sizeof(reply));
+    sendUDPbytes(reply, sizeof(reply));
+}
+
 void MachineProcessor::handleBroadcastPGN(uint8_t pgn, const uint8_t* data, size_t len) {
     if (!instance) {
         LOG_ERROR(EventSource::MACHINE, "No instance for broadcast PGN!");

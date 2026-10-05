@@ -560,6 +560,9 @@ void setup()
 
   // Add 50Hz tasks (motor control)
   scheduler.addTask(SimpleScheduler::HZ_50, taskMotorDriver, "Motor Driver");
+  scheduler.addTask(SimpleScheduler::HZ_50, []{
+    MachineProcessor::getInstance()->sendPGN237();
+  }, "PGN237 Send");
 
   // Add 10Hz tasks (UI and status)
   scheduler.addTask(SimpleScheduler::HZ_10, taskLEDUpdate, "LED Update");
