@@ -16,12 +16,15 @@
 #include "DHCPLite.h"
 #include "ConfigManager.h"
 #include "ESP32Interface.h"
+#include "SerialManager.h"
 
 using namespace qindesign::network;
 
 // Static member definitions
-EthernetUDP QNEthernetUDPHandler::udpPGN;
-EthernetUDP QNEthernetUDPHandler::udpRTCM;
+// Receive queues hold several datagrams; QNEthernet's default of one drops
+// the older datagram when a second arrives before the next poll
+EthernetUDP QNEthernetUDPHandler::udpPGN{UDP_RX_QUEUE_SIZE};
+EthernetUDP QNEthernetUDPHandler::udpRTCM{UDP_RX_QUEUE_SIZE};
 EthernetUDP QNEthernetUDPHandler::udpDHCP;
 EthernetUDP QNEthernetUDPHandler::udpSend;
 bool QNEthernetUDPHandler::dhcpServerEnabled = false;
@@ -91,22 +94,28 @@ void QNEthernetUDPHandler::poll() {
     pollCounter++;
     if (pollCounter & 1) return;
     
-    // Check for incoming PGN packets
-    int packetSize = udpPGN.parsePacket();
-    if (packetSize > 0 && packetSize <= sizeof(packetBuffer)) {
-        int bytesRead = udpPGN.read(packetBuffer, packetSize);
-        if (bytesRead > 0) {
-            // Process the packet
-            handlePGNPacket(packetBuffer, bytesRead, udpPGN.remoteIP(), udpPGN.remotePort());
+    // Process all queued PGN packets
+    int packetSize;
+    for (size_t i = 0; i < UDP_RX_QUEUE_SIZE && (packetSize = udpPGN.parsePacket()) >= 0; i++) {
+        if (packetSize > 0 && packetSize <= (int)sizeof(packetBuffer)) {
+            int bytesRead = udpPGN.read(packetBuffer, packetSize);
+            if (bytesRead > 0) {
+                // Process the packet
+                handlePGNPacket(packetBuffer, bytesRead, udpPGN.remoteIP(), udpPGN.remotePort());
+            }
         }
     }
     
-    // Check for incoming RTCM packets
-    packetSize = udpRTCM.parsePacket();
-    if (packetSize > 0 && packetSize <= sizeof(packetBuffer)) {
-        int bytesRead = udpRTCM.read(packetBuffer, packetSize);
-        if (bytesRead > 0) {
-            handleRTCMPacket(packetBuffer, bytesRead, udpRTCM.remoteIP(), udpRTCM.remotePort());
+    // Forward one queued RTCM packet per pass, and only when the GPS serial
+    // TX buffer has room for it, so the write does not block the loop.
+    // A burst waits in the socket's receive queue meanwhile.
+    if (SerialGPS1.availableForWrite() >= RTCM_SERIAL_TX_ROOM) {
+        packetSize = udpRTCM.parsePacket();
+        if (packetSize > 0 && packetSize <= (int)sizeof(packetBuffer)) {
+            int bytesRead = udpRTCM.read(packetBuffer, packetSize);
+            if (bytesRead > 0) {
+                handleRTCMPacket(packetBuffer, bytesRead, udpRTCM.remoteIP(), udpRTCM.remotePort());
+            }
         }
     }
     
