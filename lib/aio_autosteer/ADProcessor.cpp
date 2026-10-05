@@ -441,15 +441,18 @@ float ADProcessor::getWASAngle() const
     
     // Use raw ADC value directly (no 3.23x scaling here)
     // The counts per degree from AgOpenGPS already accounts for the scaling
-    float centeredWAS = wasRaw - 2048.0f - wasOffset;
+    // Offset sign follows the reference AOG firmware: added when not inverted,
+    // subtracted when inverted, so the AOG "zero WAS" button converges
+    extern ConfigManager configManager;
+    bool inverted = configManager.getInvertWAS();
+    float centeredWAS = wasRaw - 2048.0f + (inverted ? -wasOffset : wasOffset);
     
     // Calculate angle
     if (wasCountsPerDegree != 0) {
         float angle = centeredWAS / wasCountsPerDegree;
         
         // Apply inversion from ConfigManager (runtime changeable)
-        extern ConfigManager configManager;
-        if (configManager.getInvertWAS()) {
+        if (inverted) {
             angle = -angle;
         }
         
@@ -458,7 +461,7 @@ float ADProcessor::getWASAngle() const
         if (millis() - lastWASDebug > 2000) {
             lastWASDebug = millis();
             LOG_DEBUG(EventSource::AUTOSTEER, "WAS: raw=%d, centered=%.0f, angle=%.2f°, offset=%d, CPD=%.1f, inverted=%d", 
-                      wasRaw, centeredWAS, angle, wasOffset, wasCountsPerDegree, configManager.getInvertWAS());
+                      wasRaw, centeredWAS, angle, wasOffset, wasCountsPerDegree, inverted);
         }
         
         return angle;

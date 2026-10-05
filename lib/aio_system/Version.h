@@ -8,7 +8,7 @@
 #define VERSION_H
 
 // AiO v26 firmware version
-#define FIRMWARE_VERSION "26.5.5" // Generic/Keya CAN brand uses physical WAS (CAN curve always 0)
+#define FIRMWARE_VERSION "26.5.6" // WAS offset sign matches AOG reference firmware (zero WAS button converges)
 
 // Teensy board type for OTA identification
 #define TEENSY_BOARD_TYPE "Teensy41"
