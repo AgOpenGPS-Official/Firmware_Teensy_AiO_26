@@ -87,6 +87,7 @@ private:
     uint16_t softStartDurationMs = 500;     // Duration of soft-start ramp (400-1000ms range)
     uint16_t softAccelDurationMs = 250;     // Duration of soft-acceleration ramp (150-500ms range)
     bool useSineRamp = false;                // Use sine curve (true) or linear ramp (false)
+    int16_t lastPwmDrive = 0;                // Previous pwmDrive before ramp and direction inversion
     
     // Deferred disarm for AOG OSB handshake
     // When valve/motor not ready, we briefly arm so AOG sees the state change,

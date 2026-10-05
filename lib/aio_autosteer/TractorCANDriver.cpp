@@ -355,6 +355,7 @@ void TractorCANDriver::processKeyaMessage(const CAN_message_t& msg) {
 
         int16_t currentRaw = (int16_t)((msg.buf[4] << 8) | msg.buf[5]);
         motorCurrent = (uint16_t)abs(currentRaw);
+        motorCurrentX32 = motorCurrentX32 * 0.9f + (float)motorCurrent * 32.0f * 0.1f;
 
         motorErrorCode = (uint16_t)((msg.buf[6] << 8) | msg.buf[7]);
 
@@ -367,6 +368,63 @@ void TractorCANDriver::processKeyaMessage(const CAN_message_t& msg) {
         lastSteerReadyTime = millis();
         lastHeartbeat = millis();
     }
+}
+
+// Slip detection, same logic as KeyaCANDriver::checkMotorSlip()
+bool TractorCANDriver::checkKeyaMotorSlip() {
+    if (!hasKeyaFunction()) {
+        return false;
+    }
+
+    static uint8_t slipCounter = 0;
+    static float lastCommandedRPM = 0.0f;
+    static uint32_t lastSpeedChangeTime = 0;
+
+    // Check if speed command changed significantly
+    if (fabsf(commandedRPM - lastCommandedRPM) > 5.0f) {
+        lastSpeedChangeTime = millis();
+        lastCommandedRPM = commandedRPM;
+        slipCounter = 0;  // Reset counter on speed change
+    }
+
+    // Give motor 50ms to respond to speed changes
+    if (millis() - lastSpeedChangeTime < 50) {
+        return false;
+    }
+
+    if (!heartbeatValid || !enabled) {
+        slipCounter = 0;
+        return false;
+    }
+
+    // Only trigger kickout on actual errors, not just disabled state
+    if (motorErrorCode != 0 && motorErrorCode != 0x4001) {
+        uint8_t errorLow = motorErrorCode & 0xFF;
+        uint8_t errorHigh = (motorErrorCode >> 8) & 0xFF;
+        if (errorLow > 1 || errorHigh > 0) {
+            LOG_WARNING(EventSource::AUTOSTEER, "Keya motor error code: 0x%04X", motorErrorCode);
+            return true;
+        }
+    }
+
+    // Slip when the speed error exceeds the commanded speed plus tolerance
+    float error = fabsf(actualRPM - commandedRPM);
+    if (error > fabsf(commandedRPM) + SLIP_RPM_TOLERANCE) {
+        slipCounter++;
+        if (slipCounter >= SLIP_COUNT_THRESHOLD) {
+            LOG_WARNING(EventSource::AUTOSTEER,
+                        "Keya motor slip detected! Counter=%d Cmd=%.1f Act=%.1f Error=%.1f",
+                        slipCounter, commandedRPM, actualRPM, error);
+            return true;
+        }
+    } else {
+        if (slipCounter > 0) {
+            LOG_DEBUG(EventSource::AUTOSTEER, "Keya slip counter reset (was %d)", slipCounter);
+        }
+        slipCounter = 0;
+    }
+
+    return false;
 }
 
 void TractorCANDriver::sendKeyaCommands() {

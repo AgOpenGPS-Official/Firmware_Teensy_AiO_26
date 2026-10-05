@@ -220,7 +220,9 @@ void KickoutMonitor::process() {
         else if (isKeyaMotor && checkMotorSlipOverCurrentKickout()) {
             kickoutActive = true;
             // Determine specific reason based on motor type
-            if (motorDriver->getType() == MotorDriverType::KEYA_CAN) {
+            if (motorDriver->getType() == MotorDriverType::KEYA_CAN ||
+                (motorType == MotorDriverType::TRACTOR_CAN &&
+                 static_cast<TractorCANDriver*>(motorDriver)->hasKeyaMotor())) {
                 kickoutReason = KEYA_SLIP;  // checkMotorSlip handles both slip and errors
             } else {
                 kickoutReason = MOTOR_SLIP;
@@ -430,9 +432,24 @@ bool KickoutMonitor::checkMotorSlipOverCurrentKickout() {
         }
     }
     else if (motorType == MotorDriverType::TRACTOR_CAN) {
-        // TRACTOR_CAN kickout is handled by checkCANKickout() via JSON config
-        // No slip detection here - CAN kickout uses valve status messages
-        return false;
+        TractorCANDriver* tractorCAN = static_cast<TractorCANDriver*>(motorDriver);
+        if (!tractorCAN->hasKeyaMotor()) {
+            // Valve kickout is handled by checkCANKickout() via JSON config
+            return false;
+        }
+
+        // Keya motor on the tractor CAN driver: same slip and current checks as KEYA_CAN
+        if (tractorCAN->checkKeyaMotorSlip()) {
+            LOG_WARNING(EventSource::AUTOSTEER, "KICKOUT: Keya motor slip detected");
+            return true;
+        }
+        float current = tractorCAN->getKeyaCurrentX32();
+        uint8_t threshold = configMgr->getCurrentThreshold();
+        if (current > threshold) {
+            LOG_WARNING(EventSource::AUTOSTEER, "KICKOUT: Keya motor current (A) %.1f value (Ax32): %.f over threshold %u",
+                        current/32, current, threshold);
+            return true;
+        }
     }
 
     // For other motor types, could check position feedback vs commanded
