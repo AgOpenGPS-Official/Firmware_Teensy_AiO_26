@@ -1209,6 +1209,7 @@ void AutosteerProcessor::updateMotorControl() {
     else if (!shouldBeActive && motorState != MotorState::DISABLED) {
         // Transition: Disable motor
         motorState = MotorState::DISABLED;
+        lastPwmDrive = 0;
         motorPWM = 0;
         if (motorPTR) {
             motorPTR->enable(false);
@@ -1296,9 +1297,11 @@ void AutosteerProcessor::updateMotorControl() {
         }
 
         // Check for hard acceleration - soften if needed
+        // Compare against lastPwmDrive, not motorPWM: motorPWM has the ramp and the
+        // motor direction inversion applied, which gave false triggers
         uint8_t accelThreshold = (uint8_t)((highPWM - minPWM) * ACCEL_THRESHOLD_RATIO);
         if ((abs(pwmDrive) > (highPWM - accelThreshold)) &&
-            (abs(motorPWM) < (minPWM + accelThreshold)) &&
+            (abs(lastPwmDrive) < (minPWM + accelThreshold)) &&
             (motorState == MotorState::NORMAL_CONTROL)) {
             motorState = MotorState::SOFT_ACCEL;
             softStartBeginTime = millis();
@@ -1306,7 +1309,7 @@ void AutosteerProcessor::updateMotorControl() {
         }
 
         // Check for direction change - if so, enter soft-start again
-        if (((motorPWM > 0 && pwmDrive < 0) || (motorPWM < 0 && pwmDrive > 0)) &&
+        if (((lastPwmDrive > 0 && pwmDrive < 0) || (lastPwmDrive < 0 && pwmDrive > 0)) &&
             (abs(pwmDrive) > (minPWM + DIRECTION_CHANGE_THRESHOLD)) &&
             (motorState == MotorState::NORMAL_CONTROL)) {
             motorState = MotorState::SOFT_START;
@@ -1315,6 +1318,7 @@ void AutosteerProcessor::updateMotorControl() {
         }
 
         // Store final PWM value
+        lastPwmDrive = pwmDrive;
         motorPWM = pwmDrive;
         
         // Log the PWM calculation periodically
@@ -1464,6 +1468,7 @@ void AutosteerProcessor::emergencyStop() {
     
     // Reset motor state
     motorState = MotorState::DISABLED;
+    lastPwmDrive = 0;
     
     // Disable motor immediately
     motorPWM = 0;
