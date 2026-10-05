@@ -8,7 +8,7 @@
 #define VERSION_H
 
 // AiO v26 firmware version
-#define FIRMWARE_VERSION "26.5.7" // Bind UDP sockets at boot even when Ethernet link is down
+#define FIRMWARE_VERSION "26.5.8" // UDP receive queues of 8 datagrams for PGN and RTCM sockets
 
 // Teensy board type for OTA identification
 #define TEENSY_BOARD_TYPE "Teensy41"

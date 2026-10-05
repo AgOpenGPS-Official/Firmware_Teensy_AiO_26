@@ -36,6 +36,8 @@ private:
     
     static bool dhcpServerEnabled;
     static uint8_t packetBuffer[512];  // Buffer for receiving packets
+    static constexpr size_t UDP_RX_QUEUE_SIZE = 8;      // Datagrams queued per receive socket
+    static constexpr int RTCM_SERIAL_TX_ROOM = 256;     // Free GPS serial TX bytes needed to forward an RTCM datagram
     
     // Packet handlers
     static void handlePGNPacket(const uint8_t* data, size_t len, 
