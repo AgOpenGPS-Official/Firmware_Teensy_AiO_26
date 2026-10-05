@@ -8,7 +8,11 @@
 #define VERSION_H
 
 // AiO v26 firmware version
-#define FIRMWARE_VERSION "26.5.5-UDP_INIT_FIX-TEST" // Generic/Keya CAN brand uses physical WAS (CAN curve always 0)
+<<<<<<< HEAD
+#define FIRMWARE_VERSION "26.5.6" // Bind UDP sockets at boot even when Ethernet link is down
+=======
+#define FIRMWARE_VERSION "26.5.6" // WAS offset sign matches AOG reference firmware (zero WAS button converges)
+>>>>>>> origin/main
 
 // Teensy board type for OTA identification
 #define TEENSY_BOARD_TYPE "Teensy41"
