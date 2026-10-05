@@ -206,7 +206,7 @@ const char TOUCH_FRIENDLY_DEVICE_SETTINGS_PAGE[] PROGMEM = R"rawliteral(
     </style>
     <script>
         function toggleJDPWMSensitivity() {
-            const enabled = document.getElementById('jdPWMEnabled').checked;
+            const enabled = document.getElementById('pressureMode').value === '1';
             document.getElementById('jdPWMSensitivityGroup').style.display = enabled ? 'block' : 'none';
         }
         
@@ -223,7 +223,7 @@ const char TOUCH_FRIENDLY_DEVICE_SETTINGS_PAGE[] PROGMEM = R"rawliteral(
                 softStartDuration: parseInt(document.getElementById('softStartDuration').value),
                 encoderType: parseInt(document.getElementById('encoderType').value),
                 serialRadioBaud: parseInt(document.getElementById('serialRadioBaud').value),
-                jdPWMEnabled: document.getElementById('jdPWMEnabled').checked,
+                jdPWMEnabled: document.getElementById('pressureMode').value === '1',
                 jdPWMSensitivity: parseInt(document.getElementById('jdPWMSensitivity').value),
                 buzzerVolume: parseInt(document.getElementById('buzzerVolume').value)
             };
@@ -274,7 +274,7 @@ const char TOUCH_FRIENDLY_DEVICE_SETTINGS_PAGE[] PROGMEM = R"rawliteral(
                     document.getElementById('softStartDuration').value = data.softStartDuration || 500;
                     document.getElementById('encoderType').value = data.encoderType || 1;
                     document.getElementById('serialRadioBaud').value = data.serialRadioBaud || 115200;
-                    document.getElementById('jdPWMEnabled').checked = data.jdPWMEnabled || false;
+                    document.getElementById('pressureMode').value = data.jdPWMEnabled ? '1' : '0';
                     document.getElementById('jdPWMSensitivity').value = data.jdPWMSensitivity || 5;
                     updateSensitivityValue(data.jdPWMSensitivity || 5);
                     toggleJDPWMSensitivity();
@@ -367,17 +367,6 @@ const char TOUCH_FRIENDLY_DEVICE_SETTINGS_PAGE[] PROGMEM = R"rawliteral(
                     </div>
                 </div>
 
-                <div class="form-group">
-                    <label for="encoderType">Encoder Type:</label>
-                    <select id="encoderType" name="encoderType">
-                        <option value="1">Single Channel</option>
-                        <option value="2">Quadrature (Dual Channel)</option>
-                    </select>
-                    <div class="help-text" style="margin-top: 5px;">
-                        Single channel encoders use only the Kickout-D pin. Quadrature encoders use both Kickout-A and Kickout-D pins for direction sensing and higher resolution.
-                    </div>
-                </div>
-
                 <div class="form-group" style="margin-top: 15px;">
                     <label for="serialRadioBaud">RTK Radio Baud Rate:</label>
                     <select id="serialRadioBaud" name="serialRadioBaud">
@@ -409,20 +398,36 @@ const char TOUCH_FRIENDLY_DEVICE_SETTINGS_PAGE[] PROGMEM = R"rawliteral(
                     </div>
                 </div>
 
-                <div class="toggle-container" style="margin-top: 15px;">
-                    <div class="toggle-info">
-                        <label for="jdPWMEnabled" class="toggle-label">John Deere PWM Encoder Mode</label>
-                        <div class="help-text">
-                            Enable John Deere Autotrac PWM encoder support. This uses the digital kickout input (Kickout-D pin 3) to measure PWM duty cycle changes for steering wheel motion detection.<br>
-                            <strong>Note:</strong> In AgOpenGPS, you must enable "Pressure Sensor" kickout mode and use the pressure set point in AgOpenGPS to set the kickout point.
-                        </div>
-                    </div>
-                    <label class="toggle-switch">
-                        <input type="checkbox" id="jdPWMEnabled" name="jdPWMEnabled" onchange="toggleJDPWMSensitivity()">
-                        <span class="toggle-slider"></span>
-                    </label>
+            </div>
+
+            <h2>Steering Kickout</h2>
+            <div class="card">
+                <div class="help-text" style="margin-bottom: 15px;">
+                    Choose what feeds each kickout type. Turn the kickout types on or off, and set their thresholds, in the AgOpenGPS steer settings.
                 </div>
-                
+
+                <div class="form-group">
+                    <label for="encoderType">Encoder Mode:</label>
+                    <select id="encoderType" name="encoderType">
+                        <option value="1">Single Channel</option>
+                        <option value="2">Quadrature (Dual Channel)</option>
+                    </select>
+                    <div class="help-text" style="margin-top: 5px;">
+                        Used by the AgOpenGPS "Turn Sensor" kickout. Single channel encoders use only the Kickout-D pin. Quadrature encoders use both Kickout-A and Kickout-D pins for direction sensing and higher resolution.
+                    </div>
+                </div>
+
+                <div class="form-group" style="margin-top: 15px;">
+                    <label for="pressureMode">Pressure Sensor Mode:</label>
+                    <select id="pressureMode" name="pressureMode" onchange="toggleJDPWMSensitivity()">
+                        <option value="0">Analog Pressure Sensor</option>
+                        <option value="1">John Deere PWM Encoder</option>
+                    </select>
+                    <div class="help-text" style="margin-top: 5px;">
+                        Used by the AgOpenGPS "Pressure Sensor" kickout, with the pressure set point as the kickout point. Analog reads a pressure sensor on the Kickout-A pin. John Deere PWM Encoder measures duty cycle changes of an Autotrac encoder on the Kickout-D pin to detect steering wheel motion.
+                    </div>
+                </div>
+
                 <div id="jdPWMSensitivityGroup" style="display: none;">
                     <div class="slider-container">
                         <label for="jdPWMSensitivity">JD PWM Sensitivity</label>
@@ -437,6 +442,16 @@ const char TOUCH_FRIENDLY_DEVICE_SETTINGS_PAGE[] PROGMEM = R"rawliteral(
                         <div class="help-text" style="text-align: center; margin-top: 5px;">
                             Higher values require less wheel movement to trigger
                         </div>
+                    </div>
+                </div>
+
+                <div class="form-group" style="margin-top: 15px;">
+                    <label for="currentMode">Current Sensor Mode:</label>
+                    <select id="currentMode" name="currentMode" disabled>
+                        <option value="0">Automatic</option>
+                    </select>
+                    <div class="help-text" style="margin-top: 5px;">
+                        Used by the AgOpenGPS "Current Sensor" kickout. PWM motor drivers use the onboard current sensor. Keya motors use the current reported by the motor.
                     </div>
                 </div>
             </div>
