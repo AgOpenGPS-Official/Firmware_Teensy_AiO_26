@@ -78,6 +78,45 @@ const char TOUCH_FRIENDLY_OTA_PAGE[] PROGMEM = R"rawliteral(
             border: 2px solid #bdc3c7;
         }
         
+        .progress-track {
+            height: 28px;
+            background: #e0e0e0;
+            border-radius: 14px;
+            overflow: hidden;
+            margin-top: 20px;
+            display: none;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            width: 0%;
+            background: #4caf50;
+            transition: width 0.2s linear;
+        }
+        
+        .progress-fill.busy {
+            background: repeating-linear-gradient(45deg, #4caf50 0 14px, #66bb6a 14px 28px);
+            background-size: 40px 28px;
+            animation: progress-stripes 1s linear infinite;
+        }
+        
+        .progress-fill.failed {
+            background: #ef5350;
+        }
+        
+        @keyframes progress-stripes {
+            from { background-position: 0 0; }
+            to { background-position: 40px 0; }
+        }
+        
+        .progress-label {
+            text-align: center;
+            font-size: 18px;
+            font-weight: 600;
+            margin-top: 8px;
+            display: none;
+        }
+        
         .upload-button {
             background: #4caf50;
         }
@@ -130,11 +169,14 @@ const char TOUCH_FRIENDLY_OTA_PAGE[] PROGMEM = R"rawliteral(
         }
     </style>
     <script>
+        let startVersion = '';
+        
         function loadVersion() {
             fetch('/api/status')
             .then(response => response.json())
             .then(data => {
                 if (data.version) {
+                    startVersion = data.version;
                     document.getElementById('currentVersion').textContent = data.version;
                 } else {
                     document.getElementById('currentVersion').textContent = 'Unknown';
@@ -164,6 +206,127 @@ const char TOUCH_FRIENDLY_OTA_PAGE[] PROGMEM = R"rawliteral(
             }
         }
         
+        function setProgress(percent, label, state) {
+            const track = document.getElementById('progressTrack');
+            const fill = document.getElementById('progressFill');
+            const text = document.getElementById('progressLabel');
+            track.style.display = 'block';
+            text.style.display = 'block';
+            fill.style.width = percent + '%';
+            fill.className = 'progress-fill' + (state ? ' ' + state : '');
+            text.textContent = label;
+        }
+        
+        function log(line) {
+            document.getElementById('feedback').textContent += line + '\n';
+        }
+        
+        function formatKB(bytes) {
+            return Math.round(bytes / 1024).toLocaleString() + ' KB';
+        }
+        
+        // Poll the device until it answers again after the reboot
+        // confirmed: the device answered that it accepted the firmware
+        function waitForReboot(confirmed) {
+            const started = Date.now();
+            let attempts = 0;
+            setProgress(100, 'Step 3 of 3: Rebooting...', 'busy');
+            log('Waiting for device to reboot...');
+            
+            function poll() {
+                const elapsed = Math.round((Date.now() - started) / 1000);
+                if (elapsed > 90) {
+                    setProgress(100, 'Device did not come back', 'failed');
+                    log('No answer after 90 s. Check the connection and reload this page.');
+                    document.getElementById('uploadBtn').disabled = false;
+                    return;
+                }
+                setProgress(100, 'Step 3 of 3: Rebooting... ' + elapsed + ' s', 'busy');
+                
+                const controller = new AbortController();
+                const timer = setTimeout(() => controller.abort(), 2000);
+                attempts++;
+                fetch('/api/status?t=' + Date.now(), { signal: controller.signal, cache: 'no-store' })
+                .then(response => response.json())
+                .then(data => {
+                    clearTimeout(timer);
+                    const version = data.version || 'Unknown';
+                    document.getElementById('currentVersion').textContent = version;
+                    const unchanged = startVersion && version === startVersion;
+                    if (unchanged && !confirmed) {
+                        setProgress(100, 'Update not confirmed: still version ' + version, 'failed');
+                        log('Device is back online with the same version and never confirmed the update. Try again.');
+                    } else if (unchanged) {
+                        setProgress(100, 'Update complete: version ' + version + ' (unchanged)', '');
+                        log('Device is back online. Version is unchanged: ' + version);
+                    } else {
+                        setProgress(100, 'Update complete: version ' + version, '');
+                        log('Device is back online. Version: ' + (startVersion ? startVersion + ' -> ' : '') + version);
+                    }
+                    document.getElementById('uploadBtn').disabled = false;
+                })
+                .catch(() => {
+                    clearTimeout(timer);
+                    setTimeout(poll, 1000);
+                });
+            }
+            
+            // Give the device time to start applying the update before the first poll
+            setTimeout(poll, 3000);
+        }
+        
+        function sendFirmware(name, content) {
+            const uploadBtn = document.getElementById('uploadBtn');
+            const total = content.length;
+            let sentAll = false;
+            let lastPercent = 0;
+            
+            log('File loaded: ' + name + ' (' + formatKB(total) + ')');
+            setProgress(0, 'Step 1 of 3: Uploading... 0%', '');
+            
+            const xhr = new XMLHttpRequest();
+            
+            xhr.upload.addEventListener('progress', function(e) {
+                if (!e.lengthComputable || sentAll) return;
+                lastPercent = Math.floor((e.loaded / e.total) * 100);
+                setProgress(lastPercent, 'Step 1 of 3: Uploading... ' + lastPercent + '% (' +
+                            formatKB(e.loaded) + ' of ' + formatKB(e.total) + ')', '');
+            });
+            
+            xhr.upload.addEventListener('load', function() {
+                sentAll = true;
+                log('Upload sent: ' + formatKB(total));
+                setProgress(100, 'Step 2 of 3: Finishing upload and verifying...', 'busy');
+            });
+            
+            xhr.addEventListener('load', function() {
+                if (xhr.status === 200) {
+                    log('Firmware accepted by device.');
+                    waitForReboot(true);
+                } else {
+                    setProgress(lastPercent, 'Update failed', 'failed');
+                    log('Update failed: ' + xhr.responseText);
+                    uploadBtn.disabled = false;
+                }
+            });
+            
+            xhr.addEventListener('error', function() {
+                if (sentAll) {
+                    // The device can drop the connection as it reboots
+                    log('Connection closed by device.');
+                    waitForReboot(false);
+                } else {
+                    setProgress(lastPercent, 'Upload interrupted at ' + lastPercent + '%', 'failed');
+                    log('Connection lost during upload. Check the connection and try again.');
+                    uploadBtn.disabled = false;
+                }
+            });
+            
+            xhr.open('POST', '/api/ota/upload');
+            xhr.setRequestHeader('Content-Type', 'text/plain');
+            xhr.send(content);
+        }
+        
         function uploadFile() {
             const fileInput = document.getElementById('file');
             const file = fileInput.files[0];
@@ -178,58 +341,14 @@ const char TOUCH_FRIENDLY_OTA_PAGE[] PROGMEM = R"rawliteral(
                 return false;
             }
         
-            const feedback = document.getElementById('feedback');
-            const uploadBtn = document.getElementById('uploadBtn');
-        
-            feedback.textContent = 'Reading file...';
-            uploadBtn.disabled = true;
+            document.getElementById('feedback').textContent = '';
+            document.getElementById('uploadBtn').disabled = true;
             
             // Read file content
             const reader = new FileReader();
             reader.onload = function(e) {
-                const content = e.target.result;
-                feedback.textContent += '\nFile loaded: ' + file.name + ' (' + content.length + ' bytes)\n';
-                feedback.textContent += 'Uploading to device...\n';
-                
-                const xhr = new XMLHttpRequest();
-                
-                let blockCount = 0;
-                let baseText = feedback.textContent;
-                const updateInterval = setInterval(() => {
-                    if (xhr.readyState !== 4) {
-                        blockCount++;
-                        feedback.textContent = baseText + 'Block ' + blockCount;
-                    } else {
-                        clearInterval(updateInterval);
-                    }
-                }, 500);
-                
-                xhr.addEventListener('load', function() {
-                    clearInterval(updateInterval);
-                    if (xhr.status === 200) {
-                        feedback.textContent = baseText + 'Upload complete, rebooting...';
-                        setTimeout(() => {
-                            window.location.href = '/';
-                        }, 5000);
-                    } else {
-                        feedback.textContent = baseText + 'Upload failed: ' + xhr.responseText;
-                        uploadBtn.disabled = false;
-                    }
-                });
-                
-                xhr.addEventListener('error', function() {
-                    clearInterval(updateInterval);
-                    feedback.textContent = baseText + 'Connection lost (device may be rebooting)';
-                    setTimeout(() => {
-                        window.location.href = '/';
-                    }, 5000);
-                });
-                
-                xhr.open('POST', '/api/ota/upload');
-                xhr.setRequestHeader('Content-Type', 'text/plain');
-                xhr.send(content);
+                sendFirmware(file.name, e.target.result);
             };
-            
             reader.readAsText(file);
             return false;
         }
@@ -259,6 +378,9 @@ const char TOUCH_FRIENDLY_OTA_PAGE[] PROGMEM = R"rawliteral(
             <input type="file" id="file" name="firmware" accept=".hex" onchange="displayFileName()" style="display: none;">
             
             <div id="fileInfo" class="file-info"></div>
+            
+            <div id="progressTrack" class="progress-track"><div id="progressFill" class="progress-fill"></div></div>
+            <div id="progressLabel" class="progress-label"></div>
             
             <div id="feedback"></div>
         </div>
