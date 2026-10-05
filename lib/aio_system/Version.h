@@ -8,11 +8,7 @@
 #define VERSION_H
 
 // AiO v26 firmware version
-<<<<<<< HEAD
-#define FIRMWARE_VERSION "26.5.6" // Bind UDP sockets at boot even when Ethernet link is down
-=======
-#define FIRMWARE_VERSION "26.5.6" // WAS offset sign matches AOG reference firmware (zero WAS button converges)
->>>>>>> origin/main
+#define FIRMWARE_VERSION "26.5.7" // Bind UDP sockets at boot even when Ethernet link is down
 
 // Teensy board type for OTA identification
 #define TEENSY_BOARD_TYPE "Teensy41"
