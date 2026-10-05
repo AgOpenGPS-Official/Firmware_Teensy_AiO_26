@@ -75,6 +75,8 @@ public:
     static void handlePGN236(uint8_t pgn, const uint8_t* data, size_t len);  // Pin config
     static void handlePGN238(uint8_t pgn, const uint8_t* data, size_t len);  // Machine config
     static void handlePGN239(uint8_t pgn, const uint8_t* data, size_t len);  // Machine data
+
+    void sendPGN237();               // Report applied machine state to AOG
     
     void updateSectionOutputs();
     void updateMachineOutputs();     // New unified output handler
@@ -107,4 +109,5 @@ constexpr uint8_t MACHINE_PGN_PIN_CONFIG = 0xEC; // 236 - Pin Config from AOG
 constexpr uint8_t MACHINE_PGN_CONFIG = 0xEE;     // 238 - Machine Config from AOG
 constexpr uint8_t MACHINE_PGN_DATA = 0xEF;       // 239 - Machine Data from AOG
 constexpr uint8_t MACHINE_PGN_REPLY = 0xED;      // 237 - From Machine to AOG
+constexpr uint8_t MACHINE_REPLY_FLAG_DATA_VALID = 0x01;  // PGN 237 status bit 0: PGN 239 watchdog not timed out
 constexpr uint8_t MACHINE_HELLO_REPLY = 0x7B;

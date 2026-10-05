@@ -8,7 +8,7 @@
 #define VERSION_H
 
 // AiO v26 firmware version
-#define FIRMWARE_VERSION "26.5.8" // UDP receive queues of 8 datagrams for PGN and RTCM sockets
+#define FIRMWARE_VERSION "26.6.0" // PGN 237: applied machine state reported to AOG at 50 Hz
 
 // Teensy board type for OTA identification
 #define TEENSY_BOARD_TYPE "Teensy41"
