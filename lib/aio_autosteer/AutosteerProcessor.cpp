@@ -1308,13 +1308,16 @@ void AutosteerProcessor::updateMotorControl() {
             LOG_DEBUG(EventSource::AUTOSTEER, "Hard acceleration detected - entering soft accel mode");
         }
 
-        // Check for direction change - if so, enter soft-start again
+        // Check for direction change - if so, use the shorter soft-accel ramp
+        // (half the soft-start duration). The full soft-start ramp is only for
+        // engaging from DISABLED; using it here stacked up to 500ms of lag on
+        // every steering reversal.
         if (((lastPwmDrive > 0 && pwmDrive < 0) || (lastPwmDrive < 0 && pwmDrive > 0)) &&
             (abs(pwmDrive) > (minPWM + DIRECTION_CHANGE_THRESHOLD)) &&
             (motorState == MotorState::NORMAL_CONTROL)) {
-            motorState = MotorState::SOFT_START;
+            motorState = MotorState::SOFT_ACCEL;
             softStartBeginTime = millis();
-            LOG_DEBUG(EventSource::AUTOSTEER, "Direction change detected - entering soft start mode");
+            LOG_DEBUG(EventSource::AUTOSTEER, "Direction change detected - entering soft accel mode");
         }
 
         // Store final PWM value
