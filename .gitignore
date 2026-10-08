@@ -8,3 +8,5 @@
 test/
 
 .fake
+.vscode/extensions.json
+.vscode/settings.json
