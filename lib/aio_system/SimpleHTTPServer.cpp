@@ -9,6 +9,7 @@
 
 #include "SimpleHTTPServer.h"
 #include "EventLogger.h"
+#include "Watchdog.h"
 
 SimpleHTTPServer::SimpleHTTPServer() : 
     server(80),
@@ -216,6 +217,7 @@ void SimpleHTTPServer::sendP(EthernetClient& client, int code, const String& con
                 // Wait for client to be ready (up to 100ms)
                 uint32_t waitStart = millis();
                 while (!client.availableForWrite() && (millis() - waitStart < 100)) {
+                    Watchdog::feed();
                     delay(1);
                 }
                 

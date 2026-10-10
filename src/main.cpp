@@ -35,6 +35,7 @@
 #include "RTCMProcessor.h"
 #include "SimpleWebManager.h"
 #include "Version.h"
+#include "Watchdog.h"
 #include "ESP32Interface.h"
 #include "CANConfigStorage.h"
 #include "GVRETServer.h"
@@ -594,6 +595,9 @@ void setup()
   Serial.println();
   
   LOG_INFO(EventSource::SYSTEM, "=== System Ready ===");
+
+  // Start the hardware watchdog last, once all blocking init is done (1 s timeout)
+  Watchdog::begin(1);
 }
 
 void loop()
@@ -604,6 +608,7 @@ void loop()
   // Run SimpleScheduler
   // ============================================
   scheduler.run();
+  Watchdog::feed();  // Only reached if every task returned; a hung task lets the MCU reset
 
 
   // Loop timing - ultra lightweight, just increment counter

@@ -11,6 +11,7 @@
 #include "ConfigManager.h"
 #include "EventLogger.h"
 #include "Version.h"
+#include "Watchdog.h"
 #include "HardwareManager.h"
 #include "QNetworkBase.h"
 #include "ADProcessor.h"
@@ -50,6 +51,7 @@ using namespace qindesign::network;
 // External references
 extern EncoderProcessor* encoderProcessor;
 extern GNSSProcessor gnssProcessor;
+static bool steeringEngagedReject(EthernetClient& client);
 
 SimpleWebManager::SimpleWebManager() :
     isRunning(false),
@@ -261,6 +263,7 @@ void SimpleWebManager::setupRoutes() {
     // CAN config upload endpoint
     httpServer.on("/api/can/config/upload", [this](EthernetClient& client, const String& method, const String& query) {
         if (method == "POST") {
+            if (steeringEngagedReject(client)) return;
             handleCANConfigUpload(client);
         } else {
             SimpleHTTPServer::send(client, 405, "text/plain", "Method Not Allowed");
@@ -303,6 +306,7 @@ void SimpleWebManager::setupRoutes() {
     // UM98x API endpoints
     httpServer.on("/api/um98x/read", [this](EthernetClient& client, const String& method, const String& query) {
         if (method == "GET") {
+            if (steeringEngagedReject(client)) return;
             handleUM98xRead(client);
         } else {
             SimpleHTTPServer::send(client, 405, "text/plain", "Method Not Allowed");
@@ -311,6 +315,7 @@ void SimpleWebManager::setupRoutes() {
     
     httpServer.on("/api/um98x/write", [this](EthernetClient& client, const String& method, const String& query) {
         if (method == "POST") {
+            if (steeringEngagedReject(client)) return;
             handleUM98xWrite(client);
         } else {
             SimpleHTTPServer::send(client, 405, "text/plain", "Method Not Allowed");
@@ -817,6 +822,16 @@ void SimpleWebManager::handleAnalogWorkSwitchSetpoint(EthernetClient& client) {
     LOG_INFO(EventSource::NETWORK, "Analog work switch setpoint set to %.1f%%", currentPercent);
 }
 
+// Long-running config operations block the main loop; refuse them while steering is engaged
+static bool steeringEngagedReject(EthernetClient& client) {
+    AutosteerProcessor* steer = AutosteerProcessor::getInstance();
+    if (steer && steer->isSteerActive()) {
+        SimpleHTTPServer::send(client, 409, "text/plain", "Disengage autosteer before changing this setting");
+        return true;
+    }
+    return false;
+}
+
 void SimpleWebManager::handleOTAUpload(EthernetClient& client) {
     // OTA upload request received
     
@@ -848,6 +863,7 @@ void SimpleWebManager::handleOTAUpload(EthernetClient& client) {
     unsigned long lastDataTime = millis();
     
     while (client.connected() && (millis() - start < timeout) && !SimpleOTAHandler::isComplete()) {
+        Watchdog::feed();
         if (client.available()) {
             size_t bytesRead = client.readBytes(buffer, sizeof(buffer));
             
@@ -976,6 +992,7 @@ String SimpleWebManager::readPostBody(EthernetClient& client) {
     unsigned long lastDataTime = millis();
 
     while (millis() - start < timeout) {
+        Watchdog::feed();
         while (client.available()) {
             // Read in chunks for better performance
             char buffer[512];
