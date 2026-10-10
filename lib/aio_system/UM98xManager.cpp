@@ -333,7 +333,6 @@ bool UM98xManager::sendCommandAndWaitForResponse(const String& cmd, String& resp
     uint32_t lastConfigTime = 0;
     
     while (millis() - startTime < timeout) {
-    
         Watchdog::feed();
         if (readLineWithTimeout(line, 100)) {  // 100ms timeout per line
             
@@ -574,7 +573,6 @@ bool UM98xManager::readLineWithTimeout(String& line, uint32_t timeout) {
     uint32_t startTime = millis();
     
     while (millis() - startTime < timeout) {
-    
         Watchdog::feed();
         if (gpsSerial->available()) {
             char c = gpsSerial->read();
