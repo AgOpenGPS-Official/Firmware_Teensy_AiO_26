@@ -979,13 +979,12 @@ String SimpleWebManager::readPostBody(EthernetClient& client) {
         while (client.available()) {
             // Read in chunks for better performance
             char buffer[512];
-            size_t bytesRead = client.readBytes(buffer, sizeof(buffer));
+            // Leave one byte for the terminator so a full read can't write
+            // past the end of the buffer.
+            size_t bytesRead = client.readBytes(buffer, sizeof(buffer) - 1);
             if (bytesRead > 0) {
-                // Temporarily null-terminate and append
-                char tempChar = buffer[bytesRead];
                 buffer[bytesRead] = '\0';
                 body += buffer;
-                buffer[bytesRead] = tempChar;
                 lastDataTime = millis(); // Reset timeout on data
             }
         }
