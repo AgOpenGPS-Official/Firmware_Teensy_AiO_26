@@ -50,20 +50,34 @@ bool WebSocketClient::poll() {
         return performHandshake();
     }
     
-    // Read available data
-    while (tcpClient.available()) {
+    // Drain TCP into the receive buffer, bounded so a peer cannot grow it without limit
+    const size_t maxBuffered = MAX_PAYLOAD + 14;  // payload + max header + mask
+    while (tcpClient.available() && receiveBuffer.size() < maxBuffered) {
+        uint8_t tmp[128];
+        size_t room = maxBuffered - receiveBuffer.size();
+        int n = tcpClient.read(tmp, min(sizeof(tmp), room));
+        if (n <= 0) break;
+        receiveBuffer.insert(receiveBuffer.end(), tmp, tmp + n);
+    }
+
+    // Parse every complete frame; partial frames wait for the next poll
+    while (!receiveBuffer.empty()) {
         WSFrameHeader header;
         std::vector<uint8_t> payload;
-        
-        if (readFrame(header, payload)) {
-            processFrame(header, payload);
-        } else {
-            // Frame reading error, close connection
-            close(1002, "Protocol error");
-            return false;
+
+        FrameResult result = readFrame(header, payload);
+        if (result == FrameResult::NEED_MORE) {
+            break;
         }
+        if (result == FrameResult::OK) {
+            processFrame(header, payload);
+            continue;
+        }
+        close(result == FrameResult::TOO_LARGE ? 1009 : 1002,
+              result == FrameResult::TOO_LARGE ? "Message too big" : "Protocol error");
+        return false;
     }
-    
+
     return true;
 }
 
@@ -150,66 +164,54 @@ String WebSocketClient::generateAcceptKey(const String& key) {
     return encoded;
 }
 
-bool WebSocketClient::readFrame(WSFrameHeader& header, std::vector<uint8_t>& payload) {
-    // Read first two bytes
-    if (tcpClient.available() < 2) return false;
-    
-    uint8_t byte1 = tcpClient.read();
-    uint8_t byte2 = tcpClient.read();
-    
-    // Parse header
+WebSocketClient::FrameResult WebSocketClient::readFrame(WSFrameHeader& header, std::vector<uint8_t>& payload) {
+    const uint8_t* buf = receiveBuffer.data();
+    size_t avail = receiveBuffer.size();
+    if (avail < 2) return FrameResult::NEED_MORE;
+
+    uint8_t byte1 = buf[0];
+    uint8_t byte2 = buf[1];
+    size_t pos = 2;
+
     header.fin = (byte1 & 0x80) != 0;
     header.rsv1 = (byte1 & 0x40) != 0;
     header.rsv2 = (byte1 & 0x20) != 0;
     header.rsv3 = (byte1 & 0x10) != 0;
     header.opcode = static_cast<WSOpcode>(byte1 & 0x0F);
     header.masked = (byte2 & 0x80) != 0;
-    
-    // Get payload length
+
     uint64_t len = byte2 & 0x7F;
     if (len == 126) {
-        // Extended payload length (16-bit)
-        if (tcpClient.available() < 2) return false;
-        len = (tcpClient.read() << 8) | tcpClient.read();
+        if (avail < pos + 2) return FrameResult::NEED_MORE;
+        len = ((uint64_t)buf[pos] << 8) | buf[pos + 1];
+        pos += 2;
     } else if (len == 127) {
-        // Extended payload length (64-bit) - we'll limit to 32-bit
-        if (tcpClient.available() < 8) return false;
-        tcpClient.read(); tcpClient.read(); tcpClient.read(); tcpClient.read(); // Skip high 32 bits
-        len = (tcpClient.read() << 24) | (tcpClient.read() << 16) | 
-              (tcpClient.read() << 8) | tcpClient.read();
+        if (avail < pos + 8) return FrameResult::NEED_MORE;
+        len = 0;
+        for (int i = 0; i < 8; i++) len = (len << 8) | buf[pos + i];
+        pos += 8;
     }
+
+    if (len > MAX_PAYLOAD) return FrameResult::TOO_LARGE;
     header.payloadLength = len;
-    
-    // Read mask key if present
+
     if (header.masked) {
-        if (tcpClient.available() < 4) return false;
-        for (int i = 0; i < 4; i++) {
-            header.maskKey[i] = tcpClient.read();
-        }
+        if (avail < pos + 4) return FrameResult::NEED_MORE;
+        memcpy(header.maskKey, buf + pos, 4);
+        pos += 4;
     }
-    
-    // Read payload
-    payload.resize(header.payloadLength);
-    size_t bytesRead = 0;
-    while (bytesRead < header.payloadLength) {
-        if (!tcpClient.available()) {
-            delay(1);  // Brief wait for more data
-            if (!tcpClient.available()) return false;
-        }
-        
-        size_t toRead = min(tcpClient.available(), (int)(header.payloadLength - bytesRead));
-        tcpClient.read(&payload[bytesRead], toRead);
-        bytesRead += toRead;
-    }
-    
-    // Unmask payload if needed
+
+    if (avail < pos + len) return FrameResult::NEED_MORE;
+
+    payload.assign(buf + pos, buf + pos + len);
     if (header.masked) {
         for (size_t i = 0; i < payload.size(); i++) {
             payload[i] ^= header.maskKey[i % 4];
         }
     }
-    
-    return true;
+
+    receiveBuffer.erase(receiveBuffer.begin(), receiveBuffer.begin() + pos + len);
+    return FrameResult::OK;
 }
 
 bool WebSocketClient::sendFrame(WSOpcode opcode, const uint8_t* data, size_t length) {

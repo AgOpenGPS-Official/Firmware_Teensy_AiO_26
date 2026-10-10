@@ -62,6 +62,7 @@ private:
     uint32_t clientId;
     bool handshakeComplete;
     std::vector<uint8_t> receiveBuffer;
+    static constexpr size_t MAX_PAYLOAD = 2048;  // Largest frame payload we accept
     
     std::function<void(const uint8_t*, size_t, bool)> messageCallback;
     std::function<void()> closeCallback;
@@ -69,7 +70,9 @@ private:
     static uint32_t nextClientId;
     
     bool performHandshake();
-    bool readFrame(WSFrameHeader& header, std::vector<uint8_t>& payload);
+    // Parses one frame from receiveBuffer; consumes bytes only when a whole frame is present
+    enum class FrameResult { NEED_MORE, OK, TOO_LARGE, PROTOCOL_ERROR };
+    FrameResult readFrame(WSFrameHeader& header, std::vector<uint8_t>& payload);
     bool sendFrame(WSOpcode opcode, const uint8_t* data, size_t length);
     void processFrame(const WSFrameHeader& header, const std::vector<uint8_t>& payload);
     
