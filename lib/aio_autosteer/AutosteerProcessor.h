@@ -138,6 +138,7 @@ public:
     
     // Public getters for state
     bool isEnabled() const { return autosteerEnabled; }
+    bool isSteerActive() const { return steerState == 0; }  // true while steering is engaged
     float getTargetAngle() const { return targetAngle; }
 
     // Public getter for PGN254 vehicle speed 
