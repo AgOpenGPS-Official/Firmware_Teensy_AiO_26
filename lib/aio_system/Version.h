@@ -8,7 +8,7 @@
 #define VERSION_H
 
 // AiO v26 firmware version
-#define FIRMWARE_VERSION "26.6.1" // Firmware update page: progress bar, stages and reboot detection
+#define FIRMWARE_VERSION "26.6.2" // Drain GPS UART per task call, stop analogRead on PWM pins in debug log
 
 // Teensy board type for OTA identification
 #define TEENSY_BOARD_TYPE "Teensy41"
