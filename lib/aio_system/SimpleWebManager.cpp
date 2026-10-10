@@ -18,6 +18,7 @@
 #include "SimpleOTAHandler.h"
 #include "TelemetryWebSocket.h"
 #include "AutosteerProcessor.h"
+#include "MotorDriverInterface.h"
 #include "NAVProcessor.h"
 #include "GNSSProcessor.h"
 #include "web_pages/CommonStyles.h"  // Common CSS
@@ -50,6 +51,7 @@ using namespace qindesign::network;
 // External references
 extern EncoderProcessor* encoderProcessor;
 extern GNSSProcessor gnssProcessor;
+extern MotorDriverInterface *motorPTR;
 
 SimpleWebManager::SimpleWebManager() :
     isRunning(false),
@@ -818,6 +820,14 @@ void SimpleWebManager::handleAnalogWorkSwitchSetpoint(EthernetClient& client) {
 }
 
 void SimpleWebManager::handleOTAUpload(EthernetClient& client) {
+    // Safety interlock: never start a firmware update while steering is engaged
+    AutosteerProcessor* steer = AutosteerProcessor::getInstance();
+    if (steer && steer->isSteerActive()) {
+        LOG_WARNING(EventSource::NETWORK, "OTA rejected: autosteer is engaged");
+        SimpleHTTPServer::send(client, 409, "text/plain", "Disengage autosteer before updating firmware");
+        return;
+    }
+
     // OTA upload request received
     
     // Initialize OTA handler if needed
@@ -955,6 +965,13 @@ void SimpleWebManager::handleOTAUpload(EthernetClient& client) {
         
         // Apply the update
         LOG_INFO(EventSource::NETWORK, "Applying firmware update now");
+
+        // Flash writes freeze outputs in their current state: put the motor in a safe state first
+        if (motorPTR) {
+            motorPTR->setPWM(0);
+            motorPTR->stop();
+            motorPTR->enable(false);
+        }
         SimpleOTAHandler::applyUpdate();
     } else {
         const char* error = SimpleOTAHandler::getError();
