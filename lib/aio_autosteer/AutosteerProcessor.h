@@ -12,9 +12,6 @@
 class ADProcessor;
 extern ADProcessor adProcessor;
 
-class MotorDriverInterface;
-extern MotorDriverInterface motorDriver;
-
 class KickoutMonitor;
 
 // PGN data is parsed directly to ConfigManager

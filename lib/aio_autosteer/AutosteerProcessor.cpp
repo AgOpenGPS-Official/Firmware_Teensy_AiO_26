@@ -580,9 +580,6 @@ void AutosteerProcessor::process() {
     static uint32_t kickoutButtonPressTime = 0;
     static bool kickoutButtonPressed = false;
     
-    // Process motor driver (for serial communication)
-    motorDriver.process();
-    
     // Process kickout monitoring
     if (kickoutMonitor) {
         kickoutMonitor->process();
