@@ -7,6 +7,7 @@
 // UM98xManager.cpp - Configuration manager for UM981/UM982 GPS receivers
 #include "UM98xManager.h"
 #include "GNSSProcessor.h"
+#include "Watchdog.h"
 
 // External instance
 extern GNSSProcessor gnssProcessor;
@@ -80,6 +81,7 @@ bool UM98xManager::readConfiguration(UM98xConfig& config) {
     sendCommandAndWaitForResponse("UNLOGALL COM3", response);
     
     // Give GPS a moment to stop sending messages
+    Watchdog::feed();
     delay(100);
     
     // Read CONFIG
@@ -103,6 +105,7 @@ bool UM98xManager::readConfiguration(UM98xConfig& config) {
         for (int attempt = 0; attempt < 3 && !modeSuccess; attempt++) {
             if (attempt > 0) {
                 LOG_WARNING(EventSource::SYSTEM, "Retrying MODE command (attempt %d)", attempt + 1);
+                Watchdog::feed();
                 delay(100);  // Brief delay before retry
             }
             
@@ -209,6 +212,7 @@ bool UM98xManager::writeConfiguration(const UM98xConfig& config) {
     }
     
     // Give GPS a moment to stop sending messages
+    Watchdog::feed();
     delay(100);
     
     // 1. Send each CONFIG command line
@@ -329,6 +333,8 @@ bool UM98xManager::sendCommandAndWaitForResponse(const String& cmd, String& resp
     uint32_t lastConfigTime = 0;
     
     while (millis() - startTime < timeout) {
+    
+        Watchdog::feed();
         if (readLineWithTimeout(line, 100)) {  // 100ms timeout per line
             
             // Check if this is our command acknowledgment
@@ -352,6 +358,7 @@ bool UM98xManager::sendCommandAndWaitForResponse(const String& cmd, String& resp
                     // COM3 is typically the last config item
                     if (line.startsWith("$CONFIG,COM3,")) {
                         // Wait a bit to ensure no more CONFIG lines
+                        Watchdog::feed();
                         delay(100);
                         if (!gpsSerial->available()) {
                             return true;
@@ -383,6 +390,7 @@ bool UM98xManager::sendCommandAndWaitForResponse(const String& cmd, String& resp
                     // Read the specified number of log entries
                     int logsRead = 0;
                     while (logsRead < logCount && millis() - startTime < timeout) {
+                        Watchdog::feed();
                         if (readLineWithTimeout(line, 100)) {
                             response += line + "\n";
                             logsRead++;
@@ -566,6 +574,8 @@ bool UM98xManager::readLineWithTimeout(String& line, uint32_t timeout) {
     uint32_t startTime = millis();
     
     while (millis() - startTime < timeout) {
+    
+        Watchdog::feed();
         if (gpsSerial->available()) {
             char c = gpsSerial->read();
             if (c == '\r') {
