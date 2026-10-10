@@ -551,6 +551,22 @@ void ConfigManager::loadMiscConfig()
 
     EEPROM.get(addr, jdPWMSensitivity);
 
+    // OTA PIN: accept only a NUL-terminated printable string of valid length, else treat as unset
+    memset(otaPin, 0, sizeof(otaPin));
+    char raw[OTA_PIN_MAX_LEN + 1];
+    for (size_t i = 0; i <= OTA_PIN_MAX_LEN; i++) {
+        raw[i] = (char)EEPROM.read(OTA_PIN_ADDR + i);
+    }
+    size_t pinLen = 0;
+    bool pinValid = (raw[OTA_PIN_MAX_LEN] == '\0');
+    while (pinValid && pinLen < OTA_PIN_MAX_LEN && raw[pinLen] != '\0') {
+        if (raw[pinLen] < 0x21 || raw[pinLen] > 0x7E) pinValid = false;
+        pinLen++;
+    }
+    if (pinValid && pinLen >= OTA_PIN_MIN_LEN) {
+        memcpy(otaPin, raw, pinLen);
+    }
+
     // Validate loaded values
     if (ledBrightness < 5 || ledBrightness > 100)
     {
@@ -567,6 +583,45 @@ void ConfigManager::loadMiscConfig()
 
     LOG_INFO(EventSource::CONFIG, "Loaded misc config from EEPROM: LED=%d%%, BuzzerVol=%d, JD_PWM=%d",
              ledBrightness, buzzerVolume, jdPWMSensitivity);
+}
+
+bool ConfigManager::otaPinMatches(const char* candidate) const
+{
+    if (!hasOtaPin() || candidate == nullptr) {
+        return false;
+    }
+    // Compare the full fixed-size buffers without early exit
+    uint8_t diff = 0;
+    for (size_t i = 0; i <= OTA_PIN_MAX_LEN; i++) {
+        diff |= (uint8_t)otaPin[i] ^ (uint8_t)candidate[i];
+    }
+    return diff == 0;
+}
+
+bool ConfigManager::setOtaPin(const char* pin)
+{
+    if (pin == nullptr) return false;
+    size_t len = strlen(pin);
+    if (len < OTA_PIN_MIN_LEN || len > OTA_PIN_MAX_LEN) return false;
+    for (size_t i = 0; i < len; i++) {
+        if (pin[i] < 0x21 || pin[i] > 0x7E) return false;
+    }
+    memset(otaPin, 0, sizeof(otaPin));
+    memcpy(otaPin, pin, len);
+    for (size_t i = 0; i <= OTA_PIN_MAX_LEN; i++) {
+        EEPROM.update(OTA_PIN_ADDR + i, (uint8_t)otaPin[i]);
+    }
+    LOG_INFO(EventSource::CONFIG, "OTA PIN set");
+    return true;
+}
+
+void ConfigManager::clearOtaPin()
+{
+    memset(otaPin, 0, sizeof(otaPin));
+    for (size_t i = 0; i <= OTA_PIN_MAX_LEN; i++) {
+        EEPROM.update(OTA_PIN_ADDR + i, 0);
+    }
+    LOG_INFO(EventSource::CONFIG, "OTA PIN cleared (OTA uploads disabled)");
 }
 
 void ConfigManager::saveNetworkConfig()

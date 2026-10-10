@@ -51,6 +51,7 @@ using namespace qindesign::network;
 // External references
 extern EncoderProcessor* encoderProcessor;
 extern GNSSProcessor gnssProcessor;
+extern ConfigManager configManager;
 extern MotorDriverInterface *motorPTR;
 
 SimpleWebManager::SimpleWebManager() :
@@ -281,6 +282,11 @@ void SimpleWebManager::setupRoutes() {
     // CAN config status endpoint
     httpServer.on("/api/can/config/status", [this](EthernetClient& client, const String& method, const String& query) {
         handleCANConfigStatus(client);
+    });
+
+    // OTA status: lets the page tell the user whether a PIN has been provisioned (never returns the PIN)
+    httpServer.on("/api/ota/status", [](EthernetClient& client, const String& method, const String& query) {
+        SimpleHTTPServer::sendJSON(client, configManager.hasOtaPin() ? "{\"pinSet\":true}" : "{\"pinSet\":false}");
     });
 
     // OTA upload endpoint
@@ -819,7 +825,56 @@ void SimpleWebManager::handleAnalogWorkSwitchSetpoint(EthernetClient& client) {
     LOG_INFO(EventSource::NETWORK, "Analog work switch setpoint set to %.1f%%", currentPercent);
 }
 
+// OTA PIN check with brute-force lockout. Returns true if the request may proceed;
+// otherwise a response has already been sent.
+static bool otaAuthorized(EthernetClient& client) {
+    static uint8_t failCount = 0;
+    static uint32_t lockUntil = 0;
+    static bool locked = false;
+
+    if (!configManager.hasOtaPin()) {
+        SimpleHTTPServer::send(client, 403, "text/plain",
+            "OTA is disabled: set an OTA PIN over the serial menu (press 'o')");
+        return false;
+    }
+
+    if (locked) {
+        int32_t remaining = (int32_t)(lockUntil - millis());
+        if (remaining > 0) {
+            SimpleHTTPServer::send(client, 429, "text/plain",
+                "Too many failed attempts. Try again in " + String((remaining + 999) / 1000) + " s");
+            return false;
+        }
+        locked = false;
+    }
+
+    if (!configManager.otaPinMatches(SimpleHTTPServer::getRequestPin())) {
+        if (failCount < 255) failCount++;
+        IPAddress ip = client.remoteIP();
+        LOG_WARNING(EventSource::NETWORK, "OTA rejected: invalid PIN from %d.%d.%d.%d (failure %u)",
+                    ip[0], ip[1], ip[2], ip[3], failCount);
+        if (failCount >= 3) {
+            // 60 s, doubling per further failure, capped at 15 min
+            uint32_t lockSec = 60;
+            for (uint8_t i = 3; i < failCount && lockSec < 900; i++) lockSec *= 2;
+            if (lockSec > 900) lockSec = 900;
+            lockUntil = millis() + lockSec * 1000UL;
+            locked = true;
+        }
+        SimpleHTTPServer::send(client, 403, "text/plain", "Invalid OTA PIN");
+        return false;
+    }
+
+    failCount = 0;
+    return true;
+}
+
 void SimpleWebManager::handleOTAUpload(EthernetClient& client) {
+    // Authenticate before touching the body or any other state
+    if (!otaAuthorized(client)) {
+        return;
+    }
+
     // Safety interlock: never start a firmware update while steering is engaged
     AutosteerProcessor* steer = AutosteerProcessor::getInstance();
     if (steer && steer->isSteerActive()) {

@@ -24,5 +24,6 @@
 #define TURN_SENSOR_CONFIG_ADDR 1000 // Turn sensor configuration (1000-1099)
 #define ANALOG_WORK_SWITCH_ADDR 1100 // Analog work switch configuration (1100-1199)
 #define MISC_CONFIG_ADDR        1200 // Miscellaneous settings (1200-1299)
+#define OTA_PIN_ADDR            1216 // OTA PIN, 17 bytes NUL-padded (1216-1232). Erased (0xFF) = no PIN set
 
 #endif // EEPROM_LAYOUT_H

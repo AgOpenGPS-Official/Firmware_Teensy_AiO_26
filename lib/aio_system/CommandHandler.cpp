@@ -10,6 +10,7 @@
 #include "SimpleScheduler/SimpleScheduler.h"
 #include "SerialManager.h"
 #include "NAVProcessor.h"
+extern ConfigManager configManager;
 
 // External function declarations
 extern void toggleLoopTiming();
@@ -43,6 +44,12 @@ void CommandHandler::process() {
     }
     
     char cmd = Serial.read();
+
+    // While entering an OTA PIN, all input goes to the PIN prompt
+    if (pinEntry != PinEntry::NONE) {
+        handlePinChar(cmd);
+        return;
+    }
     
     // Ignore line ending characters (CR and LF)
     if (cmd == '\r' || cmd == '\n') {
@@ -175,6 +182,11 @@ void CommandHandler::handleCommand(char cmd) {
             NAVProcessor::getInstance()->toggleLatencyDisplay();
             break;
 
+        case 'o':  // Set / clear OTA PIN
+        case 'O':
+            startPinEntry();
+            break;
+
         case '?':
         case 'h':
         case 'H':
@@ -230,6 +242,78 @@ void CommandHandler::handleCommand(char cmd) {
 }
 
 
+void CommandHandler::startPinEntry() {
+    pinEntry = PinEntry::ENTER;
+    pinLen = 0;
+    memset(pinBuf, 0, sizeof(pinBuf));
+    memset(pinFirst, 0, sizeof(pinFirst));
+    Serial.printf("\r\nOTA PIN is currently %s.", configManager.hasOtaPin() ? "SET" : "NOT SET (web firmware updates disabled)");
+    Serial.printf("\r\nEnter new PIN (%u-%u printable characters, no spaces), then Enter.",
+                  (unsigned)ConfigManager::OTA_PIN_MIN_LEN, (unsigned)ConfigManager::OTA_PIN_MAX_LEN);
+    Serial.print("\r\nEmpty line clears the PIN (disables web updates). ESC cancels.\r\nPIN: ");
+}
+
+void CommandHandler::handlePinChar(char c) {
+    if (c == 0x1B) {  // ESC
+        pinEntry = PinEntry::NONE;
+        memset(pinBuf, 0, sizeof(pinBuf));
+        memset(pinFirst, 0, sizeof(pinFirst));
+        Serial.print("\r\nCancelled.\r\n");
+        return;
+    }
+    if (c == 0x08 || c == 0x7F) {  // Backspace
+        if (pinLen > 0) {
+            pinBuf[--pinLen] = '\0';
+            Serial.print("\b \b");
+        }
+        return;
+    }
+    if (c != '\r' && c != '\n') {
+        if (c >= 0x21 && c <= 0x7E && pinLen < ConfigManager::OTA_PIN_MAX_LEN) {
+            pinBuf[pinLen++] = c;
+            Serial.print('*');
+        }
+        return;
+    }
+
+    // Enter pressed
+    if (pinLen == 0 && pinEntry == PinEntry::CONFIRM) {
+        return;  // Ignore the LF of a CR/LF pair
+    }
+    if (pinEntry == PinEntry::ENTER) {
+        if (pinLen == 0) {
+            configManager.clearOtaPin();
+            Serial.print("\r\nOTA PIN cleared. Web firmware updates are disabled.\r\n");
+            pinEntry = PinEntry::NONE;
+            return;
+        }
+        if (pinLen < ConfigManager::OTA_PIN_MIN_LEN) {
+            Serial.printf("\r\nPIN too short (minimum %u). Try again.\r\nPIN: ", (unsigned)ConfigManager::OTA_PIN_MIN_LEN);
+            pinLen = 0;
+            memset(pinBuf, 0, sizeof(pinBuf));
+            return;
+        }
+        memcpy(pinFirst, pinBuf, sizeof(pinFirst));
+        pinLen = 0;
+        memset(pinBuf, 0, sizeof(pinBuf));
+        pinEntry = PinEntry::CONFIRM;
+        Serial.print("\r\nConfirm PIN: ");
+        return;
+    }
+
+    // CONFIRM
+    bool same = (strcmp(pinBuf, pinFirst) == 0);
+    if (same && configManager.setOtaPin(pinFirst)) {
+        Serial.print("\r\nOTA PIN saved. Use it on the System Update page.\r\n");
+    } else {
+        Serial.print("\r\nPINs did not match. Nothing changed.\r\n");
+    }
+    memset(pinBuf, 0, sizeof(pinBuf));
+    memset(pinFirst, 0, sizeof(pinFirst));
+    pinLen = 0;
+    pinEntry = PinEntry::NONE;
+}
+
 void CommandHandler::showMenu() {
     loggerPtr->printConfig();
     Serial.print("\r\n=== Firmware Controls ===");
@@ -245,6 +329,7 @@ void CommandHandler::showMenu() {
     Serial.print("\r\nP - Toggle process timing diagnostics");
     Serial.print("\r\nB - Test buzzer");
     Serial.print("\r\nV - Toggle buzzer volume (loud/quiet)");
+    Serial.print("\r\nO - Set/clear OTA PIN (required for web firmware updates)");
     Serial.print("\r\nC - Show scheduler status");
     Serial.print("\r\nG - Toggle GPS->UDP latency display");
     Serial.print("\r\nM - Start serial buffer monitoring");

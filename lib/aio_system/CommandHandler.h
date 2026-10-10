@@ -25,6 +25,15 @@ private:
     // Private constructor for singleton
     CommandHandler();
     
+    // OTA PIN entry over serial (line mode while active, input is masked)
+    enum class PinEntry { NONE, ENTER, CONFIRM };
+    PinEntry pinEntry = PinEntry::NONE;
+    char pinBuf[17] = {0};
+    char pinFirst[17] = {0};
+    size_t pinLen = 0;
+    void handlePinChar(char c);
+    void startPinEntry();
+
     // Command handler
     void handleCommand(char cmd);
     

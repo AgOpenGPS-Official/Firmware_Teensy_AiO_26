@@ -8,7 +8,7 @@
 #define VERSION_H
 
 // AiO v26 firmware version
-#define FIRMWARE_VERSION "26.6.2" // Harden PGN length, WebSocket frame size, OTA safety interlock
+#define FIRMWARE_VERSION "26.6.3" // OTA PIN authentication (serial-provisioned)
 
 // Teensy board type for OTA identification
 #define TEENSY_BOARD_TYPE "Teensy41"

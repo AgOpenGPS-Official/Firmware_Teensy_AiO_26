@@ -9,6 +9,8 @@
 
 #include "SimpleHTTPServer.h"
 #include "EventLogger.h"
+#include "ConfigManager.h"
+#include <strings.h>
 
 SimpleHTTPServer::SimpleHTTPServer() : 
     server(80),
@@ -68,6 +70,8 @@ void SimpleHTTPServer::handleClient() {
     }
 }
 
+char SimpleHTTPServer::requestPin[ConfigManager::OTA_PIN_MAX_LEN + 1] = {0};
+
 bool SimpleHTTPServer::parseRequest(EthernetClient& client, String& method, String& path, String& query) {
     char line[256];
     
@@ -98,10 +102,27 @@ bool SimpleHTTPServer::parseRequest(EthernetClient& client, String& method, Stri
         query = "";
     }
     
-    // Skip remaining headers
+    // Skip headers, keeping only X-OTA-PIN (if present) for this request
+    memset(requestPin, 0, sizeof(requestPin));
+    bool midLine = false;  // previous read filled the buffer, so this chunk continues a long line
     while (client.available()) {
         len = client.readBytesUntil('\n', line, sizeof(line) - 1);
-        if (len <= 1) break;  // Empty line marks end of headers
+        if (len <= 1 && !midLine) break;  // Empty line marks end of headers
+        bool wasMidLine = midLine;
+        midLine = (len == (int)sizeof(line) - 1);
+        if (wasMidLine || len <= 0) continue;
+        line[len] = '\0';
+        static const char kPinHeader[] = "x-ota-pin:";
+        if (strncasecmp(line, kPinHeader, sizeof(kPinHeader) - 1) == 0) {
+            const char* v = line + sizeof(kPinHeader) - 1;
+            while (*v == ' ' || *v == '\t') v++;
+            size_t vlen = strlen(v);
+            while (vlen > 0 && (v[vlen - 1] == '\r' || v[vlen - 1] == ' ' || v[vlen - 1] == '\t')) vlen--;
+            // Too long to be a valid PIN: leave empty so it can never match
+            if (vlen > 0 && vlen <= ConfigManager::OTA_PIN_MAX_LEN) {
+                memcpy(requestPin, v, vlen);
+            }
+        }
     }
     
     return true;
@@ -136,7 +157,10 @@ void SimpleHTTPServer::send(EthernetClient& client, int code, const String& cont
         case 301: status = "Moved Permanently"; break;
         case 302: status = "Found"; break;
         case 400: status = "Bad Request"; break;
+        case 403: status = "Forbidden"; break;
         case 404: status = "Not Found"; break;
+        case 409: status = "Conflict"; break;
+        case 429: status = "Too Many Requests"; break;
         case 500: status = "Internal Server Error"; break;
         case 503: status = "Service Unavailable"; break;
         default: status = "Unknown"; break;
@@ -163,7 +187,10 @@ void SimpleHTTPServer::sendP(EthernetClient& client, int code, const String& con
         case 301: status = "Moved Permanently"; break;
         case 302: status = "Found"; break;
         case 400: status = "Bad Request"; break;
+        case 403: status = "Forbidden"; break;
         case 404: status = "Not Found"; break;
+        case 409: status = "Conflict"; break;
+        case 429: status = "Too Many Requests"; break;
         case 500: status = "Internal Server Error"; break;
         case 503: status = "Service Unavailable"; break;
         default: status = "Unknown"; break;

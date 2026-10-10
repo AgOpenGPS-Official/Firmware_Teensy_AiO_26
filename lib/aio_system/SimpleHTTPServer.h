@@ -44,6 +44,10 @@ public:
     static void sendP(EthernetClient& client, int code, const String& contentType, const char* content);
     static void sendJSON(EthernetClient& client, const String& json);
     static void redirect(EthernetClient& client, const String& location);
+
+    // X-OTA-PIN header of the request currently being handled ("" if absent or too long).
+    // NUL-padded to OTA_PIN_MAX_LEN + 1 bytes. Valid only inside a route handler.
+    static const char* getRequestPin() { return requestPin; }
     
 private:
     struct Route {
@@ -51,6 +55,7 @@ private:
         HTTPHandler handler;
     };
     
+    static char requestPin[17];
     EthernetServer server;
     std::vector<Route> routes;
     uint16_t serverPort;

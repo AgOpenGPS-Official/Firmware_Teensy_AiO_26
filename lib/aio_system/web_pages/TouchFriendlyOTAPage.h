@@ -188,7 +188,22 @@ const char TOUCH_FRIENDLY_OTA_PAGE[] PROGMEM = R"rawliteral(
             });
         }
         
-        window.onload = loadVersion;
+        function loadPinStatus() {
+            fetch('/api/ota/status')
+            .then(response => response.json())
+            .then(data => {
+                const hint = document.getElementById('pinHint');
+                if (!data.pinSet) {
+                    hint.textContent = 'No OTA PIN is set. Updates are disabled until a PIN is set over the serial menu (press O).';
+                    document.getElementById('uploadBtn').disabled = true;
+                } else {
+                    hint.textContent = 'Enter the OTA PIN set over the serial menu.';
+                }
+            })
+            .catch(() => {});
+        }
+        
+        window.onload = function() { loadVersion(); loadPinStatus(); };
         
         function displayFileName() {
             const fileInput = document.getElementById('file');
@@ -324,6 +339,7 @@ const char TOUCH_FRIENDLY_OTA_PAGE[] PROGMEM = R"rawliteral(
             
             xhr.open('POST', '/api/ota/upload');
             xhr.setRequestHeader('Content-Type', 'text/plain');
+            xhr.setRequestHeader('X-OTA-PIN', document.getElementById('otaPin').value);
             xhr.send(content);
         }
         
@@ -338,6 +354,11 @@ const char TOUCH_FRIENDLY_OTA_PAGE[] PROGMEM = R"rawliteral(
             
             if (!file.name.endsWith('.hex')) {
                 alert('Please select a .hex firmware file');
+                return false;
+            }
+        
+            if (!document.getElementById('otaPin').value) {
+                alert('Enter the OTA PIN');
                 return false;
             }
         
@@ -374,6 +395,10 @@ const char TOUCH_FRIENDLY_OTA_PAGE[] PROGMEM = R"rawliteral(
                     Upload Firmware
                 </button>
             </div>
+            
+            <input type="password" id="otaPin" placeholder="OTA PIN" maxlength="16" autocomplete="off"
+                   style="width:100%; padding:14px; margin-top:12px; font-size:18px; box-sizing:border-box;">
+            <div id="pinHint" class="file-info"></div>
             
             <input type="file" id="file" name="firmware" accept=".hex" onchange="displayFileName()" style="display: none;">
             

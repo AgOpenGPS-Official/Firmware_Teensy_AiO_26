@@ -97,6 +97,7 @@ private:
     bool insUseFusion;
 
     // LED settings
+    char otaPin[17] = {0};  // OTA_PIN_MAX_LEN + 1; empty = OTA disabled
     uint8_t ledBrightness;
 
     // Buzzer settings (0=Quiet, 1=Loud, 2=Off)
@@ -190,6 +191,15 @@ public:
     void setAckermanFix(float value) { ackermanFix = value; }
 
     // LED configuration
+    // OTA PIN (set via serial menu only; never exposed over the network)
+    static constexpr size_t OTA_PIN_MIN_LEN = 6;
+    static constexpr size_t OTA_PIN_MAX_LEN = 16;
+    bool hasOtaPin() const { return otaPin[0] != '\0'; }
+    // candidate must point to at least OTA_PIN_MAX_LEN + 1 readable, NUL-padded bytes
+    bool otaPinMatches(const char* candidate) const;
+    bool setOtaPin(const char* pin);   // false if length/characters are invalid
+    void clearOtaPin();
+    static_assert(OTA_PIN_MAX_LEN + 1 == 17, "otaPin buffer size");
     uint8_t getLEDBrightness() const { return ledBrightness; }
     void setLEDBrightness(uint8_t value) {
         ledBrightness = constrain(value, 5, 100);
