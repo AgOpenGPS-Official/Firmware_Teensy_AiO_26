@@ -94,9 +94,15 @@ void KickoutMonitor::process() {
     
     // Determine motor type for sensor relevance
     MotorDriverType motorType = motorDriver ? motorDriver->getType() : MotorDriverType::NONE;
+    // TRACTOR_CAN is used for every tractor brand, not just Keya. Only treat it as a Keya motor
+    // when a Keya function is configured; otherwise the physical encoder, pressure and current
+    // kickout sensors (when enabled in config) must still be evaluated. Valve/CAN kickout from
+    // the tractor itself is handled separately by checkCANKickout().
+    bool tractorCanKeya = (motorType == MotorDriverType::TRACTOR_CAN &&
+                           static_cast<TractorCANDriver*>(motorDriver)->hasKeyaMotor());
     bool isKeyaMotor = (motorType == MotorDriverType::KEYA_CAN ||
                        motorType == MotorDriverType::KEYA_SERIAL ||
-                       motorType == MotorDriverType::TRACTOR_CAN);  // TRACTOR_CAN handles its own kickout
+                       tractorCanKeya);
     
     // Debug motor type and sensor configuration
     static uint32_t lastDebugTime = 0;
