@@ -175,17 +175,19 @@ void taskUDPPoll() {
   QNEthernetUDPHandler::poll();
 }
 
+// Drain up to 64 bytes per call so bursts don't overflow the UART buffer,
+// while still bounding how long one task can run
 void taskGPS1Serial() {
-  if (SerialGPS1.available()) {
-    char c = SerialGPS1.read();
-    gnssProcessor.processNMEAChar(c);
+  uint8_t count = 0;
+  while (SerialGPS1.available() && count++ < 64) {
+    gnssProcessor.processNMEAChar(SerialGPS1.read());
   }
 }
 
 void taskGPS2Serial() {
-  if (SerialGPS2.available()) {
-    uint8_t b = SerialGPS2.read();
-    gnssProcessor.processUBXByte(b);
+  uint8_t count = 0;
+  while (SerialGPS2.available() && count++ < 64) {
+    gnssProcessor.processUBXByte(SerialGPS2.read());
   }
 }
 

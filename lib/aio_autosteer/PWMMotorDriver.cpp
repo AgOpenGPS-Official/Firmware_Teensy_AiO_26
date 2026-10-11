@@ -122,12 +122,12 @@ void PWMMotorDriver::setPWM(int16_t pwm) {
     
     // DRV8701 complementary PWM mode: PWM1 = LEFT, PWM2 = RIGHT
     // Scale 8-bit input (0-255) to 12-bit output (0-4095)
-    // Note: Hi-Z mode in 12-bit is 4096
+    // Note: analogWrite(pin, 4096) at 12-bit resolution is a constant HIGH (100% duty), not Hi-Z
     
     uint16_t pwmValue = abs(pwm);
     // Scale from 8-bit to 12-bit
     pwmValue = (pwmValue * 4095) / 255;
-    // Special case: max value should map to Hi-Z (4096)
+    // Special case: max value maps to 4096 (constant HIGH; scaling above only reaches 4095)
     if (abs(pwm) == 255) pwmValue = 4096;
     
     // Check if brake mode is enabled
@@ -169,8 +169,8 @@ void PWMMotorDriver::setPWM(int16_t pwm) {
             LOG_DEBUG(EventSource::AUTOSTEER, "PWM %s mode: %d -> PWM1=%d, PWM2=%d, Current: %.2fA", 
                      brakeMode ? "BRAKE" : "COAST",
                      pwm, 
-                     analogRead(pwm1Pin),
-                     analogRead(pwm2Pin),
+                     pwm < 0 ? pwmValue : 0,
+                     pwm > 0 ? pwmValue : 0,
                      getCurrent());
         } else {
             LOG_DEBUG(EventSource::AUTOSTEER, "PWM: %d -> PWM1=%d, PWM2=%d", 
