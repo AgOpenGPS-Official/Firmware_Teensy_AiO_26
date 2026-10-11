@@ -818,6 +818,20 @@ void SimpleWebManager::handleAnalogWorkSwitchSetpoint(EthernetClient& client) {
 }
 
 void SimpleWebManager::handleOTAUpload(EthernetClient& client) {
+    // Safety interlock: never start a firmware update while steering is engaged
+    AutosteerProcessor* steer = AutosteerProcessor::getInstance();
+    if (steer && steer->isSteerActive()) {
+        LOG_WARNING(EventSource::NETWORK, "OTA rejected: autosteer is engaged");
+        SimpleHTTPServer::send(client, 409, "text/plain", "Disengage autosteer before updating firmware");
+        return;
+    }
+
+    // The upload loop below blocks the main loop for up to 30 s, so put the motor in a safe
+    // state now rather than leaving it at its last PWM for the whole transfer
+    if (steer) {
+        steer->emergencyStop();
+    }
+
     // OTA upload request received
     
     // Initialize OTA handler if needed
@@ -955,6 +969,10 @@ void SimpleWebManager::handleOTAUpload(EthernetClient& client) {
         
         // Apply the update
         LOG_INFO(EventSource::NETWORK, "Applying firmware update now");
+
+        // Flash writes freeze outputs in their current state: put the motor in a safe state first
+        // (re-assert in case steering was re-engaged by AgOpenGPS during the upload)
+        AutosteerProcessor::getInstance()->emergencyStop();
         SimpleOTAHandler::applyUpdate();
     } else {
         const char* error = SimpleOTAHandler::getError();

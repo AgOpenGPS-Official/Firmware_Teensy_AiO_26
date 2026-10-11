@@ -46,10 +46,17 @@ void PGNProcessor::processPGN(const uint8_t* data, size_t len, const IPAddress& 
     if (!QNetworkBase::isConnected())
         return;
 
-    if (remotePort == 9999 && len >= 5)
+    if (remotePort == 9999 && len >= 6)  // header(3) + pgn(1) + length(1) + crc(1)
     {
         // Verify first 3 PGN header bytes
         if (data[0] != 128 || data[1] != 129 || data[2] != 127)
+        {
+            return;
+        }
+
+        // Drop packets that claim more payload than arrived (prevents over-read); a length byte
+        // smaller than the datagram is tolerated
+        if (data[4] > len - 6)
         {
             return;
         }
