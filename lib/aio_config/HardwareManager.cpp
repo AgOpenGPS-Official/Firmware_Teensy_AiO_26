@@ -5,6 +5,7 @@
 // Like most Arduino code, portions of this are based on other open source Arduino code with a compatiable license.
 
 #include "HardwareManager.h"
+#include "Watchdog.h"
 #include "EventLogger.h"
 #include "ConfigManager.h"
 
@@ -182,16 +183,21 @@ void HardwareManager::performBuzzerTest()
         // Play ascending tones
         tone(getBuzzerPin(), 1000, 200); // 1kHz for 200ms
         delay(250);
+        Watchdog::feed();
         tone(getBuzzerPin(), 1500, 200); // 1.5kHz for 200ms
         delay(250);
+        Watchdog::feed();
         tone(getBuzzerPin(), 2000, 300); // 2kHz for 300ms
         delay(350);
+        Watchdog::feed();
 
         // Play descending tones
         tone(getBuzzerPin(), 1500, 200); // 1.5kHz for 200ms
         delay(250);
+        Watchdog::feed();
         tone(getBuzzerPin(), 1000, 300); // 1kHz for 300ms
         delay(350);
+        Watchdog::feed();
     }
     else
     {

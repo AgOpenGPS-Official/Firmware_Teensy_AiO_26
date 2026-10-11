@@ -6,6 +6,7 @@
 
 // LEDManagerFSM.cpp - FSM-based implementation of front panel LED control
 #include "LEDManagerFSM.h"
+#include "Watchdog.h"
 #include <Wire.h>
 #include <QNEthernet.h>
 #include "QNetworkBase.h"
@@ -336,6 +337,7 @@ void LEDManagerFSM::testLEDs() {
             LOG_DEBUG(EventSource::SYSTEM, "  %s", colorNames[color]);
             
             setLED((LED_ID)led, (LED_COLOR)color, SOLID);
+            Watchdog::feed();
             delay(500);
             setLED((LED_ID)led, OFF, SOLID);
             delay(100);
@@ -351,6 +353,7 @@ void LEDManagerFSM::testLEDs() {
     // Let them blink for 3 seconds
     for (int i = 0; i < 30; i++) {
         update();
+        Watchdog::feed();
         delay(100);
     }
     

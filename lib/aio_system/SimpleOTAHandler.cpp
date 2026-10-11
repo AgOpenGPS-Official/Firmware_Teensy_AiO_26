@@ -9,6 +9,7 @@
 
 #include "SimpleOTAHandler.h"
 #include "EventLogger.h"
+#include "Watchdog.h"
 #include <EEPROM.h>
 
 // Static member definitions
@@ -262,6 +263,9 @@ bool SimpleOTAHandler::applyUpdate() {
     uint32_t firmwareSize = maxAddress - minAddress;
     
     LOG_WARNING(EventSource::SYSTEM, "Applying firmware update...");
+
+    // Flash erase/write runs with interrupts off and cannot feed the watchdog
+    Watchdog::setMaxTimeout();
     
     // If buffer is in flash, data is already written
     if (IN_FLASH(bufferAddr)) {
