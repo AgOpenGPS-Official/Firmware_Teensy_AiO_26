@@ -1001,7 +1001,8 @@ bool GNSSProcessor::parseINSPVAXA()
 {
     // INSPVAXA format (from UM981):
     // #INSPVAXA,port,seq,idle%,time_status,week,seconds,receiver_status,reserved1,reserved2;
-    // INS_status,position_type,lat,lon,height,north_vel,east_vel,up_vel,roll,pitch,azimuth,
+    // INS_status,position_type,lat,lon,height,undulation,north_vel,east_vel,up_vel,
+    // roll,pitch,azimuth,
     // lat_σ,lon_σ,height_σ,north_vel_σ,east_vel_σ,up_vel_σ,ext_sol_stat,time_since_update,reserved*checksum
     // Header (before semicolon) is field 0, then: 1=INS_status, 2=position_type, 3=lat, 4=lon, etc.
     
@@ -1083,7 +1084,7 @@ bool GNSSProcessor::parseINSPVAXA()
             gpsData.posType = 53;  // INS_PSRSP from spec
             gpsData.fixQuality = 1;  // Basic GPS
         }
-        else if (fieldStartsWith(fieldRefs[2], "INS"))
+        else if (fieldStartsWith(fieldRefs[11], "INS"))
         {
             gpsData.posType = 52;  // INS only from spec
             gpsData.fixQuality = 1;  // Basic fix
@@ -1120,12 +1121,13 @@ bool GNSSProcessor::parseINSPVAXA()
         gpsData.altitude = parseFloatZeroCopy(fieldRefs[14]);
     }
     
-    // Field 15,16,17: North, East, Up velocities (m/s)
-    if (fieldRefs[15].length > 0 && fieldRefs[16].length > 0 && fieldRefs[17].length > 0)
+    // Field 15: Undulation (meters) - not used
+    // Field 16,17,18: North, East, Up velocities (m/s)
+    if (fieldRefs[16].length > 0 && fieldRefs[17].length > 0 && fieldRefs[18].length > 0)
     {
-        gpsData.northVelocity = parseFloatZeroCopy(fieldRefs[15]);
-        gpsData.eastVelocity = parseFloatZeroCopy(fieldRefs[16]);
-        gpsData.upVelocity = parseFloatZeroCopy(fieldRefs[17]);
+        gpsData.northVelocity = parseFloatZeroCopy(fieldRefs[16]);
+        gpsData.eastVelocity = parseFloatZeroCopy(fieldRefs[17]);
+        gpsData.upVelocity = parseFloatZeroCopy(fieldRefs[18]);
         
         // Calculate speed in knots from north/east velocities
         float speedMs = sqrt(gpsData.northVelocity * gpsData.northVelocity + 
